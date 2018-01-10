@@ -379,7 +379,7 @@ def draw_rect(event, x, y, flags, state):
 
     elif event==cv2.EVENT_MOUSEMOVE:
         if state.drawing == True:
-            state.end_potin = (x, y)
+            state.end_point = (x, y)
  
     elif event == cv2.EVENT_RBUTTONDOWN:
         state.clear_bbox()
