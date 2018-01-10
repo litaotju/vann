@@ -282,6 +282,13 @@ class State:
 
         if not ok:
             _, bound_box = self.get_current_bbox()
+
+        if bound_box is None:
+            return bound_box
+        #no matter user's spcified or tracker found, we dont consider
+        #a line (without height or without width) as a valid box
+        if bound_box[2] < 1 or bound_box[3] < 1:
+            bound_box = None
         return bound_box
 
     def clear_tracker(self):
