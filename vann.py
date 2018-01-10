@@ -170,11 +170,13 @@ class State:
         self.tracker = None
         self.iou = None
         self.cap = cap # VideoCapture
+        self.freeze_box = None
 
     def clear_bbox(self):
         self.drawing = False
         self.clear_start_point()
         self.clear_end_point()
+        self.freeze_box = None
 
     def clear_start_point(self):
         self.start_point = (-1, -1)
@@ -192,6 +194,11 @@ class State:
         # space button
         if k == 32:
             self.pause = not self.pause
+            if self.pause:
+                self.freeze_box = self.update_tracker()
+            else:
+                self.freeze_box = None
+
         # up button
         elif k == 82:
             self.speed *= 2
@@ -244,9 +251,12 @@ class State:
             ok = self.tracker.init(self.img, tuple(bbox))
 
             if not ok:
-                print ("Error: Initialize the tracker failed box:{}".format(bbox))
+                print ("Error: Initialize the tracker failed, box:{}".format(bbox))
+                self.clear_bbox()
+                self.clear_tracker()
             else:
                 print ("OKay: Initialize the tracker box:{}".format(bbox))
+            _, self.freeze_box =  self.get_current_bbox()
 
     def update_tracker(self):
         '''update the tracker (if there is one), and return the detected bound box
@@ -254,7 +264,7 @@ class State:
         '''
         ok = False
         bound_box = None
-        if self.tracker and not self.pause:
+        if self.tracker:
             ok, bound_box = self.tracker.update(self.img)
             #TODO: pause when the tracked box chanes too much with the original
             if not ok:
@@ -280,7 +290,10 @@ class State:
 
                 self.iou =  bb_intersection_over_union(boxA, boxB)
 
-        if not ok:
+        #only when current has no tracker/or pause, return the user specified box
+        #if currently there is an tracker, should always use tracker's box
+        #   and if tracker's box is not qualified, just abandan it, and consider no box
+        else:
             _, bound_box = self.get_current_bbox()
 
         if bound_box is None:
@@ -294,8 +307,7 @@ class State:
     def clear_tracker(self):
         self.tracker = None
         self.iou = None
-
-
+   
 class Render:
     def __init__(self):
         pass
@@ -305,7 +317,12 @@ class Render:
         #when video is on pause, won't mess the state's original frame 
         img = state.img.copy()
 
-        bound_box = state.update_tracker()
+        bound_box = None
+        if not state.pause:
+            bound_box = state.update_tracker()
+        else:
+            bound_box = state.freeze_box
+
         if bound_box:
             #print("Bounding box on:{}".format(bound_box))
             self.mosaic_on_bound_box(img, bound_box)
