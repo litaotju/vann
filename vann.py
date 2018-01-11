@@ -31,6 +31,69 @@ def mkdir(d1, d2=None):
             os.mkdir(d)
     return d
 
+class VideoCapture:
+
+    def __init__(self, input_file):
+        self.__cap = cv2.VideoCapture(input_file)
+        self.__cache = {}
+        
+    def read(self):
+        ''' Find the position of the frame (may be set by user, or just naturely go)
+            If the frame has been read before, and in cache, just get it from cache,
+            otherwise, read the frame from the raw video capture
+            return: ok, (img, boxes)
+                ok, bool, indicates whethere ok
+                img, np.array, the frame
+                boxes, a list of bound box of the frame, None if no boxes for the frame
+        '''
+        next_frame = self.get(cv2.CAP_PROP_POS_FRAMES)
+        #print ("reading frame: {}".format(next_frame))
+
+        MAX_FRAME_NO = self.get(cv2.CAP_PROP_FRAME_COUNT)
+        #assert next_frame >= 0 and next_frame <= MAX_FRAME_NO, next_frame
+        if next_frame < 0 and next_frame > MAX_FRAME_NO:
+            print ("Warning, try to read frame:{}".format(next_frame))
+
+
+        if next_frame in self.__cache:
+            img, boxes = self.__cache[next_frame]
+            #instread of really reading the next frame
+            #   using ok, img = self.__cap.read()
+
+            #we only set the next frame
+            #   to pretend we have really read a frame from the video
+            next_frame = min(MAX_FRAME_NO, next_frame+1)
+            self.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
+            return True, (img, boxes)
+
+        ok, img = self.__cap.read()
+        if ok:
+            self.attach_boxes(next_frame, img, None)
+        return ok, (img,  None)
+
+    def attach_boxes(self, frame_no, img, boxes):
+        ''' put the frame `img` with given `frame_no`, and given `boxes` to cache
+            so next time, when user need to read the frame, we can given the
+            boxes stored in the cache
+        '''
+        #print("caching frame:{} ".format(frame_no))
+        MAX_FRAME_NO = self.get(cv2.CAP_PROP_FRAME_COUNT)
+        if frame_no >= 0 and frame_no <= MAX_FRAME_NO:
+            self.__cache[frame_no] = (img.copy(), boxes)
+
+    def set(self, prop, val):
+        if prop == cv2.CAP_PROP_POS_FRAMES:
+            #print ("setting next frame to:{}.".format(val))
+            pass
+        self.__cap.set(prop, int(val))
+
+    def get(self, prop):
+        return  self.__cap.get(prop)
+
+    def release(self):
+        self.__cap.release()
+
+
 class BoxSaver:
     '''Save the given boxes to a file
     '''
@@ -423,7 +486,7 @@ def main():
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
     
-    cap = cv2.VideoCapture(input_file)
+    cap = VideoCapture(input_file)
     fps = cap.get(cv2.CAP_PROP_FPS)  
     fps = 25
     size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),   
@@ -450,12 +513,16 @@ def main():
     cv2.imshow('window', img)
     raw_img = None
 
+    max_frame_no = state.cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frame_cnt = 0
     last_saved_frame = -1
 
     while(not state.terminate):
+        # pause on last frame, wait user to quit or jump
+        if state.cap.get(cv2.CAP_PROP_POS_FRAMES) == max_frame_no:
+            state.pause = True
         if not state.pause:
-            ok, img = cap.read()
+            ok, (img, boxes) = cap.read()
             frame_cnt += 1
             if not ok:
                 break
