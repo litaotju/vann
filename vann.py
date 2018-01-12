@@ -166,15 +166,6 @@ def bb_intersection_over_union(boxA, boxB):
     xB = min(boxA[2], boxB[2])
     yB = min(boxA[3], boxB[3])
 
-    #The intersect is a line
-    if xA == xB or yA == yB:
-        iou = 0.0
-        return iou
-
-    #assert boxA[2] >= boxA[0] and boxA[3] >= boxA[1] and\
-    #        boxB[2] >= boxB[0] and boxB[3] >= boxB[1], \
-    #                "boxA:{} ,boxB:{}".format(boxA, boxB)
-
     # compute the area of intersection rectangle
     interArea = (xB - xA ) * (yB - yA)
 
@@ -182,19 +173,25 @@ def bb_intersection_over_union(boxA, boxB):
     # rectangles
     boxAArea = (boxA[2] - boxA[0] ) * (boxA[3] - boxA[1] )
     boxBArea = (boxB[2] - boxB[0] ) * (boxB[3] - boxB[1] )
+    assert boxAArea >= 0 and boxBArea >= 0, \
+            "boxA:{}, area:{}, boxB:{}, area:{}"\
+            .format(boxA, boxAArea, boxB, boxBArea)
 
-    #one of the box is a zero box
-    if boxAArea == 0 or boxBArea == 0:
+    #one of the box is a zero box (boxAArea ==0 or boxBArea==0)
+    #or when the two box has no intersection at all(interArea <0)
+    if interArea <= 0 or boxAArea == 0 or boxBArea == 0:
         iou = 0.0
         return iou
+
     # compute the intersection over union by taking the intersection
     # area and dividing it by the sum of prediction + ground-truth
     # areas - the interesection area
     iou = interArea / float(boxAArea + boxBArea - interArea)
 
+    assert iou > 0 and iou <= 1.0, \
+            "boxA:{}, area:{}, boxB:{}, area:{}, iou: {}"\
+            .format(boxA, boxAArea, boxB, boxBArea, iou)
     # print boxAArea, boxBArea, interArea, iou
-
-    # return the intersection over union value
     return iou
 
 def twoboxes_too_far(box0, box1):
@@ -261,20 +258,19 @@ class State:
                 self.freeze_box = self.update_tracker()
             else:
                 self.freeze_box = None
-
         # up button
-        elif k == 82:
+        elif k in (82, 0):
             self.speed *= 2
             self.speed = min(32.0, self.speed)
         #down button
-        elif k == 84:
+        elif k in(84, 1):
             self.speed /= 2
             self.speed = max(1.0/32, self.speed)
         #esc or 'q' key
         elif k in (27, ord('q')):
             self.terminate = True
         #left, right
-        if k in (81, 83):
+        if k in (81, 83, 2, 3):
             self.jump_frame(k)
 
     
@@ -282,11 +278,11 @@ class State:
         cap = self.cap
         MAX_FRAME_NO = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         current_frame_no = cap.get(cv2.CAP_PROP_POS_FRAMES)
-        if k == 83: # right 
+        if k in (83, 3): # right 
             next_frame = current_frame_no + self.cur_fps * self.speed
             next_frame = min(MAX_FRAME_NO, next_frame)
             cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
-        elif k == 81: # left
+        elif k in (81, 2): # left
             next_frame = current_frame_no - self.cur_fps * self.speed
             next_frame = max(next_frame, 0)
             cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
@@ -309,7 +305,10 @@ class State:
             # get the initial bounding box, from user specifed
             ok, bbox = self.get_current_bbox()
 
-            self.tracker = cv2.Tracker_create(TRACKER_TYPE)
+            try:
+                self.tracker = cv2.Tracker_create(TRACKER_TYPE)
+            except AttributeError:
+                self.tracker = cv2.TrackerTLD_create()
             # Initialize tracker with first frame and bounding box
             ok = self.tracker.init(self.img, tuple(bbox))
 
@@ -410,7 +409,7 @@ class Render:
         font = cv2.FONT_HERSHEY_SIMPLEX
         text = "Speed:{}, Max FPS:{}, Cur FPS:{}"\
                 .format(state.speed, int(state.max_fps), int(state.cur_fps))
-        if state.iou :
+        if state.iou is not None:
             text += " IOU: {:.2%}".format(state.iou)
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
         textX = (img.shape[1] - textsize[0]) / 2
