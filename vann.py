@@ -2,7 +2,6 @@ import cv2
 import sys
 import os
 import numpy as np
-from collections import namedtuple
 from PIL import Image
 
 WINDOW_NAME = "window"
@@ -13,6 +12,9 @@ SAVE_VIDEO = False
 
 # the intervals of images to save
 INTERVALS = 25
+
+# the iou threshold, tracker will stop if iou smaller than this
+IOU_THRESH = 0.2
 
 ALLOWED_TRACKER_TYPE = ["TLD"]
 TRACKER_TYPE = "TLD"
@@ -328,15 +330,7 @@ class State:
         bound_box = None
         if self.tracker:
             ok, bound_box = self.tracker.update(self.img)
-            #TODO: pause when the tracked box chanes too much with the original
-            if not ok:
-                # When tracking failed, stop the video auto matically.
-                # and clear the bboux, wait user to specify another box
-                self.pause = True
-                self.clear_bbox()
-                self.clear_tracker()
-                print ("Update the tracker failed box")
-            else:
+            if ok:
                 # When the tracker did good job
                 # compute the iou of tracker's box and user specifed bound box 
                 # which was used to initialize the tracker
@@ -351,6 +345,15 @@ class State:
                             bound_box[0] + bound_box[2], bound_box[1] + bound_box[3] ]
 
                 self.iou =  bb_intersection_over_union(boxA, boxB)
+
+            if not ok or self.iou < IOU_THRESH:
+                # When tracking failed, stop the video auto matically.
+                # and clear the bboux, wait user to specify another box
+                print ("Update the tracker failed, status :{}, iou:{}"\
+                        .format(ok, self.iou))
+                self.pause = True
+                self.clear_bbox()
+                self.clear_tracker()
 
         #only when current has no tracker/or pause, return the user specified box
         #if currently there is an tracker, should always use tracker's box
