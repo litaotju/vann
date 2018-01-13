@@ -16,6 +16,9 @@ INTERVALS = 25
 # the iou threshold, tracker will stop if iou smaller than this
 IOU_THRESH = 0.2
 
+# whether to resize or not before process the video
+RESIZE = True
+
 ALLOWED_TRACKER_TYPE = ["TLD"]
 TRACKER_TYPE = "TLD"
 
@@ -70,6 +73,7 @@ class VideoCapture:
 
         ok, img = self.__cap.read()
         if ok:
+            img = self.preprocess(img)
             self.attach_boxes(next_frame, img, None)
         return ok, (img,  None)
 
@@ -95,6 +99,22 @@ class VideoCapture:
     def release(self):
         self.__cap.release()
 
+
+    def preprocess(self, img):
+        '''
+           preprocess the given image, before really feed it into next
+           Here we resize it
+        '''
+        if not RESIZE:
+            return img
+        height = img.shape[0]
+        width = img.shape[1]
+        aspect_ratio = float(width)/height
+        im = Image.fromarray(img)
+        if max(width, height) >= 1080:
+            im = im.resize((1080, int(1080/aspect_ratio)))
+        img = np.asarray(im, dtype=np.uint8)
+        return img
 
 class BoxSaver:
     '''Save the given boxes to a file
