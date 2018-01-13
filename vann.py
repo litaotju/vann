@@ -14,10 +14,13 @@ SAVE_VIDEO = False
 INTERVALS = 25
 
 # the iou threshold, tracker will stop if iou smaller than this
-IOU_THRESH = 0.2
+IOU_THRESH = 0
 
 # whether to resize or not before process the video
 RESIZE = True
+
+# maximum number of frames in cache
+MAX_CACHE_FRAME = 1000
 
 ALLOWED_TRACKER_TYPE = ["TLD"]
 TRACKER_TYPE = "TLD"
@@ -41,6 +44,7 @@ class VideoCapture:
     def __init__(self, input_file):
         self.__cap = cv2.VideoCapture(input_file)
         self.__cache = {}
+        self.__cached_num = 0
         
     def read(self):
         ''' Find the position of the frame (may be set by user, or just naturely go)
@@ -59,25 +63,30 @@ class VideoCapture:
         if next_frame < 0 and next_frame > MAX_FRAME_NO:
             print ("Warning, try to read frame:{}".format(next_frame))
 
-
+        ok, img , boxes = False, None, None
         if next_frame in self.__cache:
+            ok = True
             img, boxes = self.__cache[next_frame]
-            #instread of really reading the next frame
-            #   using ok, img = self.__cap.read()
 
-            #we only set the next frame
+        if img is None: 
+            # Two possibility:
+            #  1. frame not in cache at all 
+            #  2. frame cached None, could possible be cleaned up
+            ok, img = self.__cap.read()
+            if ok and img is not None:
+                img = self.__preprocess(img)
+                self.cache_frame(next_frame, img, boxes)
+        else:
+            # Frame in cache, and not cleaned up
+            # instread of really reading the next frame
+            # we only set the next frame
             #   to pretend we have really read a frame from the video
             next_frame = min(MAX_FRAME_NO, next_frame+1)
             self.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
-            return True, (img, boxes)
 
-        ok, img = self.__cap.read()
-        if ok:
-            img = self.preprocess(img)
-            self.attach_boxes(next_frame, img, None)
-        return ok, (img,  None)
+        return ok, (img,  boxes)
 
-    def attach_boxes(self, frame_no, img, boxes):
+    def cache_frame(self, frame_no, img, boxes):
         ''' put the frame `img` with given `frame_no`, and given `boxes` to cache
             so next time, when user need to read the frame, we can given the
             boxes stored in the cache
@@ -86,6 +95,22 @@ class VideoCapture:
         MAX_FRAME_NO = self.get(cv2.CAP_PROP_FRAME_COUNT)
         if frame_no >= 0 and frame_no <= MAX_FRAME_NO:
             self.__cache[frame_no] = (img.copy(), boxes)
+            self.__cached_num += 1
+            self.__fresh_cache()
+
+    def __fresh_cache(self):
+        '''
+            fresh the cache, if the cache is full,  throw out older frames
+        '''
+        if self.__cached_num >= MAX_CACHE_FRAME:
+            frames_with_cache = [f for f, _ in self.__cache.items() if _[0] is not None] 
+            frames_with_cache.sort()
+            #TODO: find more proper way to cleaning the caches
+            frames_be_cleaning = frames_with_cache[ :MAX_CACHE_FRAME/2]
+            print("cleaning cached frames:{}".format(frames_be_cleaning))
+            for f in frames_be_cleaning:
+                self.__cache[f] = (None, self.__cache[f][1])
+                self.__cached_num -= 1
 
     def set(self, prop, val):
         if prop == cv2.CAP_PROP_POS_FRAMES:
@@ -100,7 +125,7 @@ class VideoCapture:
         self.__cap.release()
 
 
-    def preprocess(self, img):
+    def __preprocess(self, img):
         '''
            preprocess the given image, before really feed it into next
            Here we resize it
