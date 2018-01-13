@@ -604,7 +604,8 @@ def main():
         #speed control
         target_fps = fps * state.speed
         if not state.pause:
-            state.max_fps = cur_fps
+            if frame_cnt % 25 == 0:
+                state.max_fps = cur_fps
             state.cur_fps = min(cur_fps, target_fps)
         idle_time = int(1000/target_fps - 1000/cur_fps)
         if idle_time <= 0:
