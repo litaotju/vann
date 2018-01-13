@@ -19,8 +19,12 @@ IOU_THRESH = 0
 # whether to resize or not before process the video
 RESIZE = True
 
-# maximum number of frames in cache
-MAX_CACHE_FRAME = 1000
+# if RESIZE==TRUE, and width > MAX_WIDTH, then resize the video
+# and keep the width/height aspect_ration
+MAX_WIDTH = 1080
+
+# max cache as mb
+MAX_CACHE_IN_MB = 1024
 
 ALLOWED_TRACKER_TYPE = ["TLD"]
 TRACKER_TYPE = "TLD"
@@ -46,6 +50,14 @@ class VideoCapture:
         self.__cache = {}
         self.__cached_num = 0
         
+        size = (int(self.get(cv2.CAP_PROP_FRAME_WIDTH)),   
+                    int(self.get(cv2.CAP_PROP_FRAME_HEIGHT)))  
+        size = self.__get_size(size)
+        frame_bytes = float(size[0]*size[1]*3)
+
+        self.MAX_CACHE_FRAME = int(MAX_CACHE_IN_MB*1024*1024/frame_bytes)
+        print self.MAX_CACHE_FRAME
+
     def read(self):
         ''' Find the position of the frame (may be set by user, or just naturely go)
             If the frame has been read before, and in cache, just get it from cache,
@@ -102,11 +114,11 @@ class VideoCapture:
         '''
             fresh the cache, if the cache is full,  throw out older frames
         '''
-        if self.__cached_num >= MAX_CACHE_FRAME:
+        if self.__cached_num >= self.MAX_CACHE_FRAME:
             frames_with_cache = [f for f, _ in self.__cache.items() if _[0] is not None] 
             frames_with_cache.sort()
             #TODO: find more proper way to cleaning the caches
-            frames_be_cleaning = frames_with_cache[ :MAX_CACHE_FRAME/2]
+            frames_be_cleaning = frames_with_cache[:self.MAX_CACHE_FRAME/2]
             print("cleaning cached frames:{}".format(frames_be_cleaning))
             for f in frames_be_cleaning:
                 self.__cache[f] = (None, self.__cache[f][1])
@@ -130,16 +142,24 @@ class VideoCapture:
            preprocess the given image, before really feed it into next
            Here we resize it
         '''
-        if not RESIZE:
-            return img
-        height = img.shape[0]
+        assert img is not None
         width = img.shape[1]
-        aspect_ratio = float(width)/height
-        im = Image.fromarray(img)
-        if max(width, height) >= 1080:
-            im = im.resize((1080, int(1080/aspect_ratio)))
-        img = np.asarray(im, dtype=np.uint8)
+        height = img.shape[0]
+        size = (width, height)
+        new_size = self.__get_size(size)
+        if new_size != size:
+            im = Image.fromarray(img)
+            im = im.resize(new_size)
+            img = np.asarray(im, dtype=np.uint8)
         return img
+
+    def __get_size(self, (width, height)):
+        '''return the size of resized image, if need to resize
+        '''
+        if RESIZE and width > MAX_WIDTH:
+            aspect_ratio = float(width)/height
+            new_size = (MAX_WIDTH, int(MAX_WIDTH/aspect_ratio))
+        return new_size 
 
 class BoxSaver:
     '''Save the given boxes to a file
