@@ -414,7 +414,7 @@ class State:
 
                 self.iou =  bb_intersection_over_union(boxA, boxB)
 
-            if not ok or self.iou <= IOU_THRESH:
+            if not ok or self.iou < IOU_THRESH:
                 # When tracking failed, stop the video auto matically.
                 # and clear the bboux, wait user to specify another box
                 print ("Update the tracker failed, status :{}, iou:{}"\
@@ -466,6 +466,11 @@ class Render:
         if state.has_valid_bbox():
              cv2.rectangle(img, state.start_point, 
                            state.end_point, (0, 255, 0), 1)
+        if bound_box:
+             cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
+                            (int(bound_box[0] + bound_box[2]),  \
+                                int(bound_box[1] + bound_box[3])), \
+                            (255, 0, 0), 1)
 
         self.show_text_info(state, img)
         self.show_scroll_bar(state, img)
