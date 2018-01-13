@@ -586,65 +586,67 @@ def main():
     max_frame_no = state.cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frame_cnt = 0
     last_saved_frame = -1
+    
+    try:
+        while(not state.terminate):
+            # pause on last frame, wait user to quit or jump
+            if state.cap.get(cv2.CAP_PROP_POS_FRAMES) == max_frame_no:
+                state.pause = True
+            if not state.pause:
+                ok, (img, boxes) = cap.read()
+                frame_cnt += 1
+                if not ok:
+                    break
+                # Backup the orignal raw image, will save later
+                raw_img = img.copy()
+                # This is needed, because the mouse callback need this
+                # To init the tracker
+                state.img = img
 
-    while(not state.terminate):
-        # pause on last frame, wait user to quit or jump
-        if state.cap.get(cv2.CAP_PROP_POS_FRAMES) == max_frame_no:
-            state.pause = True
-        if not state.pause:
-            ok, (img, boxes) = cap.read()
-            frame_cnt += 1
-            if not ok:
-                break
-            # Backup the orignal raw image, will save later
-            raw_img = img.copy()
-            # This is needed, because the mouse callback need this
-            # To init the tracker
-            state.img = img
+            timer = cv2.getTickCount()
+            processed_img, bound_box = render.render(state, WINDOW_NAME)
 
-        timer = cv2.getTickCount()
-        processed_img, bound_box = render.render(state, WINDOW_NAME)
+            if not state.pause:
+                if out is not None:
+                    out.write(processed_img)
+                #only save the image with valid bounding box
+                #and save at least every other INTERVALS images
+                if bound_box is not None:
+                    save_this_frame = False
+                    if last_saved_frame == -1:
+                        save_this_frame = True
+                    elif frame_cnt - last_saved_frame > INTERVALS:
+                        save_this_frame = True
+                    if save_this_frame:
+                        last_saved_frame = frame_cnt
+                        processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB)
+                        raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
+                        saver.save_images(raw_img, processed_img, (state.iou, bound_box), frame_cnt)
 
-        if not state.pause:
-            if out is not None:
-                out.write(processed_img)
-            #only save the image with valid bounding box
-            #and save at least every other INTERVALS images
-            if bound_box is not None:
-                save_this_frame = False
-                if last_saved_frame == -1:
-                    save_this_frame = True
-                elif frame_cnt - last_saved_frame > INTERVALS:
-                    save_this_frame = True
-                if save_this_frame:
-                    last_saved_frame = frame_cnt
-                    processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB)
-                    raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
-                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), frame_cnt)
+            cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
 
-        cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+            #speed control
+            target_fps = fps * state.speed
+            if not state.pause:
+                if frame_cnt % 25 == 0:
+                    state.max_fps = cur_fps
+                state.cur_fps = min(cur_fps, target_fps)
+            idle_time = int(1000/target_fps - 1000/cur_fps)
+            if idle_time <= 0:
+                idle_time = 1
+            #print("cur_fps:{}, target_fps:{}, idle:{} ms".format(cur_fps, target_fps, idle_time))
 
-        #speed control
-        target_fps = fps * state.speed
-        if not state.pause:
-            if frame_cnt % 25 == 0:
-                state.max_fps = cur_fps
-            state.cur_fps = min(cur_fps, target_fps)
-        idle_time = int(1000/target_fps - 1000/cur_fps)
-        if idle_time <= 0:
-            idle_time = 1
-        #print("cur_fps:{}, target_fps:{}, idle:{} ms".format(cur_fps, target_fps, idle_time))
-
-        k = cv2.waitKey(idle_time) & 0xFF
-        #handle key event
-        state.update_on_key(k)
-
-    saver.save_boxes()
-
-    if out is not None:
-        out.release()
-    cap.release()
-    cv2.destroyAllWindows()
+            k = cv2.waitKey(idle_time) & 0xFF
+            #handle key event
+            state.update_on_key(k)
+    finally:
+       #save the box no matter what happened
+       saver.save_boxes()
+   
+       if out is not None:
+           out.release()
+       cap.release()
+       cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
