@@ -56,7 +56,6 @@ class VideoCapture:
         frame_bytes = float(size[0]*size[1]*3)
 
         self.MAX_CACHE_FRAME = int(MAX_CACHE_IN_MB*1024*1024/frame_bytes)
-        print self.MAX_CACHE_FRAME
 
     def read(self):
         ''' Find the position of the frame (may be set by user, or just naturely go)
@@ -119,7 +118,6 @@ class VideoCapture:
             frames_with_cache.sort()
             #TODO: find more proper way to cleaning the caches
             frames_be_cleaning = frames_with_cache[:self.MAX_CACHE_FRAME/2]
-            print("cleaning cached frames:{}".format(frames_be_cleaning))
             for f in frames_be_cleaning:
                 self.__cache[f] = (None, self.__cache[f][1])
                 self.__cached_num -= 1
@@ -156,6 +154,7 @@ class VideoCapture:
     def __get_size(self, (width, height)):
         '''return the size of resized image, if need to resize
         '''
+        new_size = (width, height)
         if RESIZE and width > MAX_WIDTH:
             aspect_ratio = float(width)/height
             new_size = (MAX_WIDTH, int(MAX_WIDTH/aspect_ratio))
@@ -233,6 +232,10 @@ def bb_intersection_over_union(boxA, boxB):
     xB = min(boxA[2], boxB[2])
     yB = min(boxA[3], boxB[3])
 
+    boxInter = (xA, yA, xB, yB)
+    if xB < xA or yB < yA: #invalid box
+        return 0
+
     # compute the area of intersection rectangle
     interArea = (xB - xA ) * (yB - yA)
 
@@ -256,8 +259,8 @@ def bb_intersection_over_union(boxA, boxB):
     iou = interArea / float(boxAArea + boxBArea - interArea)
 
     assert iou > 0 and iou <= 1.0, \
-            "boxA:{}, area:{}, boxB:{}, area:{}, iou: {}"\
-            .format(boxA, boxAArea, boxB, boxBArea, iou)
+            "boxA:{}, area:{}, boxB:{}, area:{}, interBox:{} iou: {}"\
+            .format(boxA, boxAArea, boxB, boxBArea, boxInter, iou)
     # print boxAArea, boxBArea, interArea, iou
     return iou
 
@@ -411,7 +414,7 @@ class State:
 
                 self.iou =  bb_intersection_over_union(boxA, boxB)
 
-            if not ok or self.iou < IOU_THRESH:
+            if not ok or self.iou <= IOU_THRESH:
                 # When tracking failed, stop the video auto matically.
                 # and clear the bboux, wait user to specify another box
                 print ("Update the tracker failed, status :{}, iou:{}"\
