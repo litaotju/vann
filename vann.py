@@ -26,8 +26,7 @@ MAX_WIDTH = 1080
 # max cache as mb
 MAX_CACHE_IN_MB = 1024
 
-ALLOWED_TRACKER_TYPE = ["TLD"]
-TRACKER_TYPE = "TLD"
+ALLOWED_TRACKER_TYPE = ["TLD", "KCL"]
 
 def debug(var, name):
     print ("Var:{}, shape{}, mean:{}, min:{}, max{}"\
@@ -175,6 +174,11 @@ class BoxSaver:
         assert len(box) == 2, box
         iou, box = box
         assert len(box) == 4, box # 4 coord and 1 iou
+
+        assert box[2] >= 0 and box[3] >= 0
+        #negative consider zero
+        box = [max(int(_), 0) for _ in box]
+
         self.boxes[fname] = box
         line = "{} : {} : {}".format(fname, box, iou)
         self.fobj.writelines(line+os.linesep)
@@ -300,7 +304,12 @@ class State:
         self.iou = None
         self.cap = cap # VideoCapture
         self.freeze_box = None
-
+        self.__tracker_type = "KCL"
+        self.__tracker_fn = {
+                "KCL": cv2.TrackerKCF_create,
+                "TLD": cv2.TrackerTLD_create
+                }
+        
     def clear_bbox(self):
         self.drawing = False
         self.clear_start_point()
@@ -342,6 +351,15 @@ class State:
         if k in (81, 83, 2, 3):
             self.jump_frame(k)
 
+        #k , t
+        if k in (107, 116):
+            if k == 107:
+                self.__tracker_type = "KCL"
+            if k == 116:
+                self.__tracker_type = "TLD"
+            print ("changing the tracker type to %s" % self.__tracker_type)
+
+
     
     def jump_frame(self, k):
         cap = self.cap
@@ -375,18 +393,20 @@ class State:
             ok, bbox = self.get_current_bbox()
 
             try:
-                self.tracker = cv2.Tracker_create(TRACKER_TYPE)
+                self.tracker = self.__tracker_fn[self.__tracker_type]()
             except AttributeError:
-                self.tracker = cv2.TrackerTLD_create()
+                self.tracker = cv2.Tracker_create(self.__tracker_type)
+
+            print ("Initializing tracker of type:%s" % self.__tracker_type)
             # Initialize tracker with first frame and bounding box
             ok = self.tracker.init(self.img, tuple(bbox))
-
+            
             if not ok:
                 print ("Error: Initialize the tracker failed, box:{}".format(bbox))
                 self.clear_bbox()
                 self.clear_tracker()
             else:
-                print ("OKay: Initialize the tracker box:{}".format(bbox))
+                print ("Okay: Initialize the tracker box:{}".format(bbox))
             _, self.freeze_box =  self.get_current_bbox()
 
     def update_tracker(self):
