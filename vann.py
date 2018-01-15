@@ -310,6 +310,8 @@ class State:
                 "TLD": cv2.TrackerTLD_create
                 }
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
+        self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
         
     def clear_bbox(self):
         self.drawing = False
@@ -469,12 +471,22 @@ class State:
     def clear_tracker(self):
         self.tracker = None
         self.iou = None
+
+    @property
+    def tracker_type(self):
+        return str(self.__tracker_type)
+
+    def mark_frame_as_mosaic(self, frame_no):
+        '''add the current frame no to marked set
+        '''
+        if frame_no >= 0 and frame_no < self.__max_frame_no:
+            self.mosaiced_frames[int(frame_no)] = 1
    
 class Render:
     def __init__(self):
         pass
 
-    def render(self, state, window_name):
+    def render(self, state, window_name, current_frame_no):
         #Make a copy here, only process the copied one, so processing the frame
         #when video is on pause, won't mess the state's original frame 
         img = state.img.copy()
@@ -502,35 +514,37 @@ class Render:
                             (255, 0, 0), 1)
 
         self.show_text_info(state, img)
-        self.show_scroll_bar(state, img)
+        self.show_scroll_bar(state, img, current_frame_no)
         
         cv2.imshow(window_name, img)
 
         return ret_img, bound_box
 
+
     def show_text_info(self, state, img):
         '''add misc text info to img, based on the state
         '''
         font = cv2.FONT_HERSHEY_SIMPLEX
-        text = "Speed:{}, Max FPS:{}, Cur FPS:{}, Mosaic Size:{}"\
+        text = "Speed:{}, Max FPS:{}, Cur FPS:{}, Mosaic Size:{}, Tracker:{}, Frame:{}/{}"\
                 .format(state.speed, int(state.max_fps), int(state.cur_fps),
-                        state.mosaic_size)
+                        state.mosaic_size, state.tracker_type, 
+                        int(state.cap.get(cv2.CAP_PROP_POS_FRAMES)-1),
+                        int(state.cap.get(cv2.CAP_PROP_FRAME_COUNT)) )
         if state.iou is not None:
-            text += " IOU: {:.2%}".format(state.iou)
+            text += " , IOU: {:.2%}".format(state.iou)
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
         textX = (img.shape[1] - textsize[0]) / 2
         textY = (img.shape[0] + textsize[1]) / 2
         #display the speed text to the bottom (offset 20) center
         cv2.putText(img, text, (textX, img.shape[0]-20), font, 0.5, (255, 255, 255), 1)
 
-    def show_scroll_bar(self, state, img):
+    def show_scroll_bar(self, state, img, current_frame_no):
         ''' add scroll bar to the bottom of the image based on the state
         '''
         raw = img.copy()
         height = img.shape[0]
         width = img.shape[1]
         MAX_FRAME_NO = state.cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        current_frame_no = state.cap.get(cv2.CAP_PROP_POS_FRAMES)
         percentage = current_frame_no/MAX_FRAME_NO
         end = int(width*percentage)
         if end <= 10:
@@ -541,6 +555,13 @@ class Render:
         alpha = 0.5
         cv2.addWeighted(img, alpha, raw, 1 - alpha, 0, img)
 
+        #show the saved mosaiced image pos to the scroll bar, using red circle
+        pos = np.nonzero(state.mosaiced_frames)[0]
+        if len(pos) == 0:
+            return
+        pos = pos/MAX_FRAME_NO*width
+        for i in pos.astype(np.int32):
+            cv2.circle(img, (i, int(height-10)), 3, (0,0,255), 1) 
 
     def mosaic_on_bound_box(self, image, box, mosaic_size=10):
         height, width = image.shape[:2]
@@ -622,6 +643,7 @@ def main():
     frame_cnt = 0
     last_saved_frame = -1
     
+    current_frame_no = 0
     
     while(not state.terminate):
         # pause on last frame, wait user to quit or jump
@@ -629,6 +651,7 @@ def main():
             state.pause = True
         if not state.pause:
             ok, (img, boxes) = cap.read()
+            current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)-1)
             frame_cnt += 1
             if not ok:
                 break
@@ -639,7 +662,8 @@ def main():
             state.img = img
 
         timer = cv2.getTickCount()
-        processed_img, bound_box = render.render(state, WINDOW_NAME)
+        processed_img, bound_box = render.render(state, WINDOW_NAME, 
+                                    current_frame_no)
 
         if not state.pause:
             if out is not None:
@@ -656,7 +680,8 @@ def main():
                     last_saved_frame = frame_cnt
                     processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB)
                     raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
-                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), frame_cnt)
+                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), current_frame_no)
+                    state.mark_frame_as_mosaic(current_frame_no)
 
         cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
 
