@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 
 WINDOW_NAME = "window"
-MOSAIC_SIZE = 10
+DEFAULT_MOSAIC_SIZE = 10
 
 # if save the mosaic video
 SAVE_VIDEO = False
@@ -309,6 +309,7 @@ class State:
                 "KCL": cv2.TrackerKCF_create,
                 "TLD": cv2.TrackerTLD_create
                 }
+        self.mosaic_size = DEFAULT_MOSAIC_SIZE
         
     def clear_bbox(self):
         self.drawing = False
@@ -357,8 +358,17 @@ class State:
                 self.__tracker_type = "KCL"
             if k == 116:
                 self.__tracker_type = "TLD"
-            print ("changing the tracker type to %s" % self.__tracker_type)
-
+            print ("Changing the tracker type to %s" % self.__tracker_type)
+        #print k
+        if k in (61, 43, 45):
+            if k in (61, 43): # =/+
+                print ("Increazing mosaic size...")
+                self.mosaic_size += 1
+                self.mosaic_size = min(40, self.mosaic_size)
+            if k == 45: # -
+                print ("Decreasing mosaic size...")
+                self.mosaic_size -= 1
+                self.mosaic_size = max(5, self.mosaic_size)
 
     
     def jump_frame(self, k):
@@ -477,7 +487,7 @@ class Render:
 
         if bound_box:
             #print("Bounding box on:{}".format(bound_box))
-            self.mosaic_on_bound_box(img, bound_box)
+            self.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
 
         ret_img = img.copy()
         # Draw the user specifed box only on the copy frame, 
@@ -502,8 +512,9 @@ class Render:
         '''add misc text info to img, based on the state
         '''
         font = cv2.FONT_HERSHEY_SIMPLEX
-        text = "Speed:{}, Max FPS:{}, Cur FPS:{}"\
-                .format(state.speed, int(state.max_fps), int(state.cur_fps))
+        text = "Speed:{}, Max FPS:{}, Cur FPS:{}, Mosaic Size:{}"\
+                .format(state.speed, int(state.max_fps), int(state.cur_fps),
+                        state.mosaic_size)
         if state.iou is not None:
             text += " IOU: {:.2%}".format(state.iou)
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
@@ -531,9 +542,9 @@ class Render:
         cv2.addWeighted(img, alpha, raw, 1 - alpha, 0, img)
 
 
-    def mosaic_on_bound_box(self, image, box):
+    def mosaic_on_bound_box(self, image, box, mosaic_size=10):
         height, width = image.shape[:2]
-        scale_mosaic = 1 / float(MOSAIC_SIZE)
+        scale_mosaic = 1 / float(mosaic_size)
         mosaic_image = cv2.resize(image, (0, 0), fx=scale_mosaic, fy=scale_mosaic)
         mosaic_image = cv2.resize(mosaic_image, (width, height), interpolation=cv2.INTER_NEAREST)
         for i in range(height):
