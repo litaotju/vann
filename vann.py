@@ -307,7 +307,8 @@ class State:
         self.__tracker_type = "KCL"
         self.__tracker_fn = {
                 "KCL": cv2.TrackerKCF_create,
-                "TLD": cv2.TrackerTLD_create
+                "TLD": cv2.TrackerTLD_create,
+                "NULL": lambda : None
                 }
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -354,21 +355,24 @@ class State:
         if k in (81, 83, 2, 3):
             self.jump_frame(k)
 
-        #k , t
-        if k in (107, 116):
-            if k == 107:
+        #k , t, n
+        if k in (107, 116, 110):
+            if k == 107: #k
                 self.__tracker_type = "KCL"
-            if k == 116:
+            if k == 116: #t
                 self.__tracker_type = "TLD"
+            if k == 110: #n
+                self.__tracker_type = "NULL"
+
             print ("Changing the tracker type to %s" % self.__tracker_type)
         #print k
         if k in (61, 43, 45):
             if k in (61, 43): # =/+
-                print ("Increazing mosaic size...")
+                #print ("Increazing mosaic size...")
                 self.mosaic_size += 1
                 self.mosaic_size = min(40, self.mosaic_size)
             if k == 45: # -
-                print ("Decreasing mosaic size...")
+                #print ("Decreasing mosaic size...")
                 self.mosaic_size -= 1
                 self.mosaic_size = max(5, self.mosaic_size)
 
@@ -411,7 +415,8 @@ class State:
 
             print ("Initializing tracker of type:%s" % self.__tracker_type)
             # Initialize tracker with first frame and bounding box
-            ok = self.tracker.init(self.img, tuple(bbox))
+            if self.tracker is not None:
+                ok = self.tracker.init(self.img, tuple(bbox))
             
             if not ok:
                 print ("Error: Initialize the tracker failed, box:{}".format(bbox))
@@ -458,7 +463,9 @@ class State:
         #if currently there is an tracker, should always use tracker's box
         #   and if tracker's box is not qualified, just abandan it, and consider no box
         else:
-            _, bound_box = self.get_current_bbox()
+            ok, bound_box = self.get_current_bbox()
+            if ok:
+                self.iou = 1
 
         if bound_box is None:
             return bound_box
