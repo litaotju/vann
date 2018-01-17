@@ -10,9 +10,6 @@ DEFAULT_MOSAIC_SIZE = 10
 # if save the mosaic video
 SAVE_VIDEO = False
 
-# the intervals of images to save
-INTERVALS = 25
-
 # the iou threshold, tracker will stop if iou smaller than this
 IOU_THRESH = 0
 
@@ -313,6 +310,7 @@ class State:
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
+        self.__intervals = 15
         
     def clear_bbox(self):
         self.drawing = False
@@ -488,6 +486,10 @@ class State:
         '''
         if frame_no >= 0 and frame_no < self.__max_frame_no:
             self.mosaiced_frames[int(frame_no)] = 1
+
+    @property
+    def intervals(self):
+        return self.__intervals
    
 class Render:
     def __init__(self):
@@ -532,7 +534,7 @@ class Render:
         '''add misc text info to img, based on the state
         '''
         font = cv2.FONT_HERSHEY_SIMPLEX
-        text = "Speed:{}, Max FPS:{}, Cur FPS:{}, Mosaic Size:{}, Tracker:{}, Frame:{}/{}"\
+        text = "Speed:{}, MaxFPS:{}, CurFPS:{}, MosaicSize:{}, Tracker:{}, Frame:{}/{}"\
                 .format(state.speed, int(state.max_fps), int(state.cur_fps),
                         state.mosaic_size, state.tracker_type, 
                         int(state.cap.get(cv2.CAP_PROP_POS_FRAMES)-1),
@@ -540,10 +542,9 @@ class Render:
         if state.iou is not None:
             text += " , IOU: {:.2%}".format(state.iou)
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
-        textX = (img.shape[1] - textsize[0]) / 2
-        textY = (img.shape[0] + textsize[1]) / 2
+        textX = max( (img.shape[1] - textsize[0]) / 2, 0)
         #display the speed text to the bottom (offset 20) center
-        cv2.putText(img, text, (textX, img.shape[0]-20), font, 0.5, (255, 255, 255), 1)
+        cv2.putText(img, text, (textX, img.shape[0]-20), font, 0.5, (0, 0, 255), 1)
 
     def show_scroll_bar(self, state, img, current_frame_no):
         ''' add scroll bar to the bottom of the image based on the state
@@ -681,7 +682,7 @@ def main():
                 save_this_frame = False
                 if last_saved_frame == -1:
                     save_this_frame = True
-                elif frame_cnt - last_saved_frame > INTERVALS:
+                elif frame_cnt - last_saved_frame > state.intervals:
                     save_this_frame = True
                 if save_this_frame:
                     last_saved_frame = frame_cnt
