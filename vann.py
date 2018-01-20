@@ -600,16 +600,17 @@ class Render:
         for i in pos.astype(np.int32):
             cv2.circle(img, (i, int(height-10)), 3, (0,0,255), 1) 
 
-    def mosaic_on_bound_box(self, image, box, mosaic_size=10):
+    def mosaic_on_bound_box(self, image, bound_box, mosaic_size=10):
         height, width = image.shape[:2]
         scale_mosaic = 1 / float(mosaic_size)
         mosaic_image = cv2.resize(image, (0, 0), fx=scale_mosaic, fy=scale_mosaic)
         mosaic_image = cv2.resize(mosaic_image, (width, height), interpolation=cv2.INTER_NEAREST)
-        for i in range(height):
-            for j in range(width):
-                if  i >= box[1] and i <= box[1] + box[3] and \
-                        j >= box[0] and j <= box[0] + box[2]:
-                    image[i][j] = mosaic_image[i][j]
+
+        x_start = int(bound_box[0])
+        x_end = min(int(bound_box[0] + bound_box[2]+1), width)
+        y_start = int(bound_box[1])
+        y_end = min(int(bound_box[1] + bound_box[3]+1), height)
+        image[y_start:y_end, x_start:x_end, :] = mosaic_image[y_start:y_end, x_start:x_end, :]
 
     def update_on_key(self, k):
         if k == ord('c'):
