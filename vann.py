@@ -203,6 +203,8 @@ class ScreenSaver:
     def save(self, img, frame_no):
         fname = os.path.join(self.output_dir, \
                         "{}_{}.jpg".format(self.basename, frame_no))
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         Image.fromarray(img).save(fname)
         return fname
 
@@ -315,7 +317,9 @@ class State:
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
+
         self.__intervals = 25
+        self.save = True #whether or not enable to save results
 
     def clear_bbox(self):
         self.drawing = False
@@ -380,6 +384,8 @@ class State:
                 #print ("Decreasing mosaic size...")
                 self.mosaic_size -= 1
                 self.mosaic_size = max(5, self.mosaic_size)
+        if k == ord('s'):
+            self.save = not self.save
     
     def jump_frame(self, k):
         cap = self.cap
@@ -565,8 +571,9 @@ class Render:
         #display the speed text to the bottom (offset 20) center
         cv2.putText(img, text, (textX, img.shape[0]-15), font, 0.5, (0, 255, 0), 1)
 
-        text2 = "Mode:{}, MosaicSize:{}, Tracker:{}".format(
-                     self.__mode, state.mosaic_size, state.tracker_type)
+        text2 = "Save:{}, Mode:{}, MosaicSize:{}, Tracker:{}".format(
+                     state.save, self.__mode, 
+                     state.mosaic_size, state.tracker_type)
         if state.iou is not None:
             text2 += " , IOU: {:.2%}".format(state.iou)
         textsize2 = cv2.getTextSize(text2, font, 0.5, 2)[0]
@@ -717,7 +724,7 @@ def main():
         processed_img, bound_box = render.render(state, WINDOW_NAME, 
                                     current_frame_no)
 
-        if not state.pause:
+        if not state.pause and state.save:
             if out is not None:
                 out.write(processed_img)
             #only save the image with valid bounding box
@@ -730,8 +737,6 @@ def main():
                     save_this_frame = True
                 if save_this_frame:
                     last_saved_frame = frame_cnt
-                    processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB)
-                    raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
                     saver.save_images(raw_img, processed_img, (state.iou, bound_box), current_frame_no)
                     state.mark_frame_as_mosaic(current_frame_no)
 
