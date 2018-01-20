@@ -34,6 +34,8 @@ MAX_CACHE_IN_MB = 1024
 
 ALLOWED_TRACKER_TYPE = ["TLD", "KCL"]
 
+HEIGHT_PADDING = 50
+
 def debug(var, name):
     print ("Var:{}, shape{}, mean:{}, min:{}, max{}"\
             .format(name, var.shape, var.mean(), var.min(), var.max()))
@@ -364,7 +366,7 @@ class State:
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
 
-        self.__intervals = 0
+        self.__intervals = 25
 
         self.save = True #whether or not enable to save results
         self.thread_save = True #whether or not enable multi-thread save
@@ -451,7 +453,7 @@ class State:
             next_frame = max(next_frame, 0)
             cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
 
-    def get_current_bbox(self):
+    def __get_current_bbox(self):
         if self.has_valid_bbox():
             bound_box = [0, 0, 0, 0]
             bound_box[0] = min(self.start_point[0], self.end_point[0])
@@ -467,7 +469,7 @@ class State:
         '''
         if self.has_valid_bbox():
             # get the initial bounding box, from user specifed
-            ok, bbox = self.get_current_bbox()
+            ok, bbox = self.__get_current_bbox()
 
             try:
                 self.tracker = self.__tracker_fn[self.__tracker_type]()
@@ -485,7 +487,7 @@ class State:
                 self.clear_tracker()
             else:
                 print ("Okay: Initialize the tracker box:{}".format(bbox))
-            _, self.freeze_box =  self.get_current_bbox()
+            _, self.freeze_box =  self.__get_current_bbox()
 
     def update_tracker(self):
         '''update the tracker (if there is one), and return the detected bound box
@@ -500,7 +502,7 @@ class State:
                 # compute the iou of tracker's box and user specifed bound box 
                 # which was used to initialize the tracker
 
-                _, user_bound_box = self.get_current_bbox()
+                _, user_bound_box = self.__get_current_bbox()
                 # re-arrange the bound box to  pointA->pointB format
                 boxA = [
                         user_bound_box[0], user_bound_box[1], 
@@ -524,7 +526,7 @@ class State:
         #if currently there is an tracker, should always use tracker's box
         #   and if tracker's box is not qualified, just abandan it, and consider no box
         else:
-            ok, bound_box = self.get_current_bbox()
+            ok, bound_box = self.__get_current_bbox()
             if ok:
                 self.iou = 1
 
@@ -603,10 +605,14 @@ class Render:
                                 int(bound_box[1] + bound_box[3])), \
                             (255, 0, 0), 1)
 
-        self.show_text_info(state, img)
-        self.show_scroll_bar(state, img, current_frame_no)
+        #height+40, width, channel
+        expanded_img = np.zeros([img.shape[0]+ HEIGHT_PADDING,  img.shape[1], img.shape[2]],
+                                img.dtype)
+        expanded_img[:img.shape[0], :, :] = img
+        self.show_text_info(state, expanded_img)
+        self.show_scroll_bar(state, expanded_img, current_frame_no)
         
-        cv2.imshow(window_name, img)
+        cv2.imshow(window_name, expanded_img)
 
         return ret_img, bound_box
 
@@ -619,9 +625,8 @@ class Render:
                         int(state.cap.get(cv2.CAP_PROP_POS_FRAMES)-1),
                         int(state.cap.get(cv2.CAP_PROP_FRAME_COUNT)) )
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
-        textX = max( (img.shape[1] - textsize[0]) / 2, 0)
-        #display the speed text to the bottom (offset 20) center
-        cv2.putText(img, text, (textX, img.shape[0]-15), font, 0.5, (0, 255, 0), 1)
+        text_pos = (30, img.shape[0]-HEIGHT_PADDING+15)
+        cv2.putText(img, text, text_pos, font, 0.5, (0, 255, 0), 1)
 
         text2 = "Save:{}, Mode:{}, MosaicSize:{}, Tracker:{}".format(
                      state.save, self.__mode, 
@@ -629,9 +634,8 @@ class Render:
         if state.iou is not None:
             text2 += " , IOU: {:.2%}".format(state.iou)
         textsize2 = cv2.getTextSize(text2, font, 0.5, 2)[0]
-        textX = max( (img.shape[1] - textsize2[0]) / 2, 0)
-        #display the speed text to the bottom (offset 20) center
-        cv2.putText(img, text2, (textX, img.shape[0]-30), font, 0.5, (0, 255, 0), 1)
+        text_pos = (30, img.shape[0]-HEIGHT_PADDING+30)
+        cv2.putText(img, text2, text_pos, font, 0.5, (0, 255, 0), 1)
 
         
     def show_scroll_bar(self, state, img, current_frame_no):
@@ -645,7 +649,9 @@ class Render:
         end = int(width*percentage)
         if end <= 10:
             end = 10
-        cv2.line(img, (0, int(height-10)), (end, int(height-10)), (255, 0, 0), 5) 
+        cv2.line(img, (0, int(height-HEIGHT_PADDING+40)), 
+                      (end, int(height-HEIGHT_PADDING+40)), 
+                      (255, 0, 0), 5) 
 
         #make the line to be smi-transparent
         alpha = 0.5
@@ -688,6 +694,8 @@ def draw_rect(event, x, y, flags, state):
         state.clear_tracker()
         state.drawing = True
         state.pause = True
+        #Due to the window padding, if you point to (0, 40) in window space
+        # you might mean (0, 0) in the image pix space
         state.start_point = (x, y)
 
     elif event == cv2.EVENT_LBUTTONUP:
@@ -749,8 +757,6 @@ def main():
 
     cv2.setMouseCallback(WINDOW_NAME, draw_rect, state)
     
-    img = np.zeros((size[0], size[1], 3), np.uint8)
-    cv2.imshow('window', img)
     raw_img = None
 
     max_frame_no = state.cap.get(cv2.CAP_PROP_FRAME_COUNT)
