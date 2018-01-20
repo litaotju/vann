@@ -41,6 +41,8 @@ def mkdir(d1, d2=None):
 
 class VideoCapture:
 
+    CACHE_IMG = False
+
     def __init__(self, input_file):
         self.__cap = cv2.VideoCapture(input_file)
         self.__cache = {}
@@ -101,9 +103,12 @@ class VideoCapture:
         #print("caching frame:{} ".format(frame_no))
         MAX_FRAME_NO = self.get(cv2.CAP_PROP_FRAME_COUNT)
         if frame_no >= 0 and frame_no <= MAX_FRAME_NO:
-            self.__cache[frame_no] = (img.copy(), boxes)
             self.__cached_num += 1
-            self.__fresh_cache()
+            if self.CACHE_IMG:
+                self.__cache[frame_no] = (img.copy(), boxes)
+                self.__fresh_cache()
+            else:
+                self.__cache[frame_no] = (None, boxes)
 
     def __fresh_cache(self):
         '''
@@ -496,7 +501,7 @@ class Render:
     def __init__(self):
         pass
 
-    def render(self, state, window_name, current_frame_no):
+    def render(self, state, window_name, current_frame_no, saved_boxes):
         #Make a copy here, only process the copied one, so processing the frame
         #when video is on pause, won't mess the state's original frame 
         img = state.img.copy()
@@ -507,9 +512,16 @@ class Render:
         else:
             bound_box = state.freeze_box
 
+        rendering_boxes = []
+        if saved_boxes: 
+            rendering_boxes += saved_boxes
         if bound_box:
+            rendering_boxes += [bound_box]
+
+
+        for b in rendering_boxes:
             #print("Bounding box on:{}".format(bound_box))
-            self.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
+            self.mosaic_on_bound_box(img, b, state.mosaic_size)
 
         ret_img = img.copy()
         # Draw the user specifed box only on the copy frame, 
@@ -517,11 +529,12 @@ class Render:
         if state.has_valid_bbox():
              cv2.rectangle(img, state.start_point, 
                            state.end_point, (0, 255, 0), 1)
-        if bound_box:
-             cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
-                            (int(bound_box[0] + bound_box[2]),  \
-                                int(bound_box[1] + bound_box[3])), \
-                            (255, 0, 0), 1)
+
+        for b in rendering_boxes:
+            cv2.rectangle(img, (int(b[0]), int(b[1])), \
+                          (int(b[0] + b[2]),  \
+                          int(b[1] + b[3])), \
+                          (255, 0, 0), 1)
 
         self.show_text_info(state, img)
         self.show_scroll_bar(state, img, current_frame_no)
@@ -641,9 +654,13 @@ def main():
     render = Render()
     saver = SamplePairSaver(output_dir, basename)
 
-    cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
-                                 cv2.WINDOW_AUTOSIZE + \
-                                 cv2.WINDOW_KEEPRATIO)
+    if sys.platform.startswith('linux'):
+        cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
+                                     cv2.WINDOW_AUTOSIZE + \
+                                     cv2.WINDOW_KEEPRATIO)
+    else:
+        cv2.namedWindow(WINDOW_NAME)
+
     cv2.setMouseCallback(WINDOW_NAME, draw_rect, state)
     
     img = np.zeros((size[0], size[1], 3), np.uint8)
@@ -660,8 +677,10 @@ def main():
         # pause on last frame, wait user to quit or jump
         if state.cap.get(cv2.CAP_PROP_POS_FRAMES) == max_frame_no:
             state.pause = True
+
+        saved_boxes = None
         if not state.pause:
-            ok, (img, boxes) = cap.read()
+            ok, (img, saved_boxes) = cap.read()
             current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)-1)
             frame_cnt += 1
             if not ok:
@@ -674,7 +693,7 @@ def main():
 
         timer = cv2.getTickCount()
         processed_img, bound_box = render.render(state, WINDOW_NAME, 
-                                    current_frame_no)
+                                    current_frame_no, saved_boxes)
 
         if not state.pause:
             if out is not None:
@@ -682,6 +701,14 @@ def main():
             #only save the image with valid bounding box
             #and save at least every other INTERVALS images
             if bound_box is not None:
+
+                #update the cached with new boxes
+                if saved_boxes is not None:
+                    saved_boxes.append(bound_box)
+                else:
+                    saved_boxes = [bound_box]
+                cap.cache_frame(current_frame_no, processed_img, saved_boxes)
+
                 save_this_frame = False
                 if last_saved_frame == -1:
                     save_this_frame = True
@@ -691,7 +718,9 @@ def main():
                     last_saved_frame = frame_cnt
                     processed_img = cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB)
                     raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
-                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), current_frame_no)
+                    saver.save_images(raw_img, processed_img, 
+                                      (state.iou, bound_box), 
+                                      current_frame_no)
                     state.mark_frame_as_mosaic(current_frame_no)
 
         cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
