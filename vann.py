@@ -1,8 +1,17 @@
 import cv2
 import sys
 import os
+import time
+import threading
+
 import numpy as np
 from PIL import Image
+
+
+try:
+    import queue as queue
+except ImportError:
+    import Queue as queue
 
 WINDOW_NAME = "window"
 DEFAULT_MOSAIC_SIZE = 10
@@ -210,10 +219,17 @@ class ScreenSaver:
 
 
 class SamplePairSaver:
-    ''' Save the sample pairs, and boxes of a video screen snapshot images
+    ''' @brief: 
+              Save the sample pairs, and boxes of a video screen snapshot images
+        @details:
+            This saver will run a sepearte daemon thread to save the images/boxes to file, 
+            if the constructor was given the `threaded=True`,
+            The seperate thread saver will import above 1/3 the fps of the whole program
+
+            Single thread (main thread) saver be used when threaded=False
     '''
 
-    def __init__(self, output_dir, basename):
+    def __init__(self, output_dir, basename, threaded=False):
         self.output_dir = output_dir
         self.basename = basename
 
@@ -225,12 +241,44 @@ class SamplePairSaver:
 
         fname = os.path.join(self.output_dir, self.basename+"_boxes.txt")
         self.boxSaver = BoxSaver(fname)
+
+        self.__threaded = threaded
+        if threaded:
+            self.__queue = queue.Queue(100)
+            self.__thread = threading.Thread(target=self.worker)
+            self.__thread.setDaemon(True)
+            self.__thread.start()
     
-    def save_images(self, orig_img, mosaic_img, box, frame_no):
+    def save_images(self, orig_img, mosaic_img, box, frame_no, thread_save):
+        #start = time.clock()
+        if self.__threaded and thread_save:
+            #print "Put frame:{}".format(frame_no)
+            try:
+                self.__queue.put((orig_img, mosaic_img, box, frame_no), timeout=0.01)
+            except queue.Full:
+                print "Queue full, abandoning frame:{}".format(frame_no)
+            #print "Put used {}s".format(time.clock()-start)
+        else:
+            self.__save_images(orig_img, mosaic_img, box, frame_no)
+            #print "Syn save used {}s".format(time.clock()-start)
+
+    def worker(self):
+        while True:
+            orig_img, mosaic_img, box, frame_no = self.__queue.get()
+            #print "Saving frame:{}".format(frame_no)
+            self.__save_images(orig_img, mosaic_img, box, frame_no)
+
+    def __save_images(self, orig_img, mosaic_img, box, frame_no):
+        '''Blocking call to save given images/box to file
+        '''
         self.saverA.save(orig_img, frame_no)
         fname = self.saverB.save(mosaic_img, frame_no)
         self.boxSaver.add_box(fname, box)
 
+    def finished(self):
+        if self.__threaded:
+            return self.__queue.empty()
+        return True
 
 def bb_intersection_over_union(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
@@ -318,8 +366,10 @@ class State:
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
 
-        self.__intervals = 25
+        self.__intervals = 0
+
         self.save = True #whether or not enable to save results
+        self.thread_save = True #whether or not enable multi-thread save
 
     def clear_bbox(self):
         self.drawing = False
@@ -372,8 +422,8 @@ class State:
                 self.__tracker_type = "TLD"
             if k == 110: #n
                 self.__tracker_type = "NULL"
-
             print ("Changing the tracker type to %s" % self.__tracker_type)
+
         #print k
         if k in (61, 43, 45):
             if k in (61, 43): # =/+
@@ -386,6 +436,9 @@ class State:
                 self.mosaic_size = max(5, self.mosaic_size)
         if k == ord('s'):
             self.save = not self.save
+
+        if k == ord('h'):
+            self.thread_save = not self.thread_save
     
     def jump_frame(self, k):
         cap = self.cap
@@ -479,6 +532,7 @@ class State:
 
         if bound_box is None:
             return bound_box
+
         #no matter user's spcified or tracker found, we dont consider
         #a line (without height or without width) as a valid box
         if bound_box[2] < 1 or bound_box[3] < 1:
@@ -613,10 +667,13 @@ class Render:
         mosaic_image = cv2.resize(image, (0, 0), fx=scale_mosaic, fy=scale_mosaic)
         mosaic_image = cv2.resize(mosaic_image, (width, height), interpolation=cv2.INTER_NEAREST)
 
-        x_start = int(bound_box[0])
+        #this is to make the x,y are in the scope of given img indices
+        #because some times, the bound box given by the tracker, will be out the scope
+        x_start = max(int(bound_box[0]), 0)
+        y_start = max(int(bound_box[1]), 0)
         x_end = min(int(bound_box[0] + bound_box[2]+1), width)
-        y_start = int(bound_box[1])
         y_end = min(int(bound_box[1] + bound_box[3]+1), height)
+
         image[y_start:y_end, x_start:x_end, :] = mosaic_image[y_start:y_end, x_start:x_end, :]
 
     def update_on_key(self, k):
@@ -683,7 +740,7 @@ def main():
     
     state = State(size, 1, cap)
     render = Render()
-    saver = SamplePairSaver(output_dir, basename)
+    saver = SamplePairSaver(output_dir, basename, True)
 
     if sys.platform.startswith('linux'):
         cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
@@ -722,7 +779,7 @@ def main():
 
         timer = cv2.getTickCount()
         processed_img, bound_box = render.render(state, WINDOW_NAME, 
-                                    current_frame_no)
+                                                 current_frame_no)
 
         if not state.pause and state.save:
             if out is not None:
@@ -737,7 +794,9 @@ def main():
                     save_this_frame = True
                 if save_this_frame:
                     last_saved_frame = frame_cnt
-                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), current_frame_no)
+                    saver.save_images(raw_img, processed_img, 
+                            (state.iou, bound_box), current_frame_no,
+                            state.thread_save)
                     state.mark_frame_as_mosaic(current_frame_no)
 
         cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
@@ -757,6 +816,12 @@ def main():
         #handle key event
         state.update_on_key(k)
         render.update_on_key(k)
+
+    #This is needed, because we need to wait the saver's daemon thread
+    #to be finished, otherwise, some images might be lost
+    while not saver.finished():
+        print "Waiting saver to be finished"
+        time.sleep(3) #wait 3s
 
     if out is not None:
         out.release()
