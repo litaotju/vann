@@ -310,7 +310,7 @@ class State:
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
-        self.__intervals = 15
+        self.__intervals = 25
         
     def clear_bbox(self):
         self.drawing = False
@@ -338,19 +338,21 @@ class State:
                 self.freeze_box = self.update_tracker()
             else:
                 self.freeze_box = None
-        # up button
-        elif k in (82, 0):
+        # up,  up (mac), '.'
+        elif k in (82, 0, ord('.')):
             self.speed *= 2
             self.speed = min(32.0, self.speed)
-        #down button
-        elif k in(84, 1):
+
+        #down, down(mac), ','
+        elif k in(84, 1, ord(',')):
             self.speed /= 2
             self.speed = max(1.0/32, self.speed)
+
         #esc or 'q' key
         elif k in (27, ord('q')):
             self.terminate = True
         #left, right
-        if k in (81, 83, 2, 3):
+        if k in (81, 83, ord(']'), ord('['), 2, 3):
             self.jump_frame(k)
 
         #k , t, n
@@ -373,17 +375,16 @@ class State:
                 #print ("Decreasing mosaic size...")
                 self.mosaic_size -= 1
                 self.mosaic_size = max(5, self.mosaic_size)
-
     
     def jump_frame(self, k):
         cap = self.cap
         MAX_FRAME_NO = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         current_frame_no = cap.get(cv2.CAP_PROP_POS_FRAMES)
-        if k in (83, 3): # right 
+        if k in (83, 3, ord(']')): # right 
             next_frame = current_frame_no + self.cur_fps * self.speed
             next_frame = min(MAX_FRAME_NO, next_frame)
             cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
-        elif k in (81, 2): # left
+        elif k in (81, 2, ord('[')): # left
             next_frame = current_frame_no - self.cur_fps * self.speed
             next_frame = max(next_frame, 0)
             cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
@@ -640,7 +641,9 @@ def main():
     render = Render()
     saver = SamplePairSaver(output_dir, basename)
 
-    cv2.namedWindow(WINDOW_NAME)
+    cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
+                                 cv2.WINDOW_AUTOSIZE + \
+                                 cv2.WINDOW_KEEPRATIO)
     cv2.setMouseCallback(WINDOW_NAME, draw_rect, state)
     
     img = np.zeros((size[0], size[1], 3), np.uint8)
