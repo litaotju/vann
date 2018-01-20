@@ -641,9 +641,13 @@ def main():
     render = Render()
     saver = SamplePairSaver(output_dir, basename)
 
-    cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
-                                 cv2.WINDOW_AUTOSIZE + \
-                                 cv2.WINDOW_KEEPRATIO)
+    if sys.platform.startswith('linux'):
+        cv2.namedWindow(WINDOW_NAME,  cv2.WINDOW_GUI_NORMAL+ \
+                                     cv2.WINDOW_AUTOSIZE + \
+                                     cv2.WINDOW_KEEPRATIO)
+    else:
+        cv2.namedWindow(WINDOW_NAME)
+
     cv2.setMouseCallback(WINDOW_NAME, draw_rect, state)
     
     img = np.zeros((size[0], size[1], 3), np.uint8)
