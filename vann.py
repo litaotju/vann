@@ -39,6 +39,11 @@ def mkdir(d1, d2=None):
             os.mkdir(d)
     return d
 
+class Mode:
+    ANN = 'ANN'
+    MOSAIC = 'MOSAIC'
+    CROP = 'CROP'
+
 class VideoCapture:
 
     def __init__(self, input_file):
@@ -311,7 +316,7 @@ class State:
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
         self.__intervals = 25
-        
+
     def clear_bbox(self):
         self.drawing = False
         self.clear_start_point()
@@ -494,6 +499,7 @@ class State:
    
 class Render:
     def __init__(self):
+        self.__mode = Mode.MOSAIC #process mode
         pass
 
     def render(self, state, window_name, current_frame_no):
@@ -507,11 +513,27 @@ class Render:
         else:
             bound_box = state.freeze_box
 
+        ret_img = None
         if bound_box:
             #print("Bounding box on:{}".format(bound_box))
-            self.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
+            if self.__mode == Mode.MOSAIC:
+                self.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
+            elif self.__mode in (Mode.ANN, Mode.CROP):
+                cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
+                            (int(bound_box[0] + bound_box[2]),  \
+                                int(bound_box[1] + bound_box[3])), \
+                            (255, 0, 0), 1)
+            if self.__mode == Mode.CROP:
+                x_start = int(bound_box[0])
+                x_end = min(int(bound_box[0] + bound_box[2]+1), img.shape[1])
+                y_start = int(bound_box[1])
+                y_end = min(int(bound_box[1] + bound_box[3]+1), img.shape[0])
+                ret_img = img.copy()[y_start:y_end, x_start:x_end, :]
+                #assert ret_img is not None, ("%d,%d,%d,%d" % (x_start, x_end, y_start, y_end))
 
-        ret_img = img.copy()
+        if ret_img is None:
+            ret_img = img.copy()
+
         # Draw the user specifed box only on the copy frame, 
         # This do not affect the returned one 
         if state.has_valid_bbox():
@@ -530,23 +552,29 @@ class Render:
 
         return ret_img, bound_box
 
-
     def show_text_info(self, state, img):
         '''add misc text info to img, based on the state
         '''
         font = cv2.FONT_HERSHEY_SIMPLEX
-        text = "Speed:{}, MaxFPS:{}, CurFPS:{}, MosaicSize:{}, Tracker:{}, Frame:{}/{}"\
+        text = "Speed:{}, MaxFPS:{}, CurFPS:{},  Frame:{}/{}"\
                 .format(state.speed, int(state.max_fps), int(state.cur_fps),
-                        state.mosaic_size, state.tracker_type, 
                         int(state.cap.get(cv2.CAP_PROP_POS_FRAMES)-1),
                         int(state.cap.get(cv2.CAP_PROP_FRAME_COUNT)) )
-        if state.iou is not None:
-            text += " , IOU: {:.2%}".format(state.iou)
         textsize = cv2.getTextSize(text, font, 0.5, 2)[0]
         textX = max( (img.shape[1] - textsize[0]) / 2, 0)
         #display the speed text to the bottom (offset 20) center
-        cv2.putText(img, text, (textX, img.shape[0]-20), font, 0.5, (0, 0, 255), 1)
+        cv2.putText(img, text, (textX, img.shape[0]-15), font, 0.5, (0, 255, 0), 1)
 
+        text2 = "Mode:{}, MosaicSize:{}, Tracker:{}".format(
+                     self.__mode, state.mosaic_size, state.tracker_type)
+        if state.iou is not None:
+            text2 += " , IOU: {:.2%}".format(state.iou)
+        textsize2 = cv2.getTextSize(text2, font, 0.5, 2)[0]
+        textX = max( (img.shape[1] - textsize2[0]) / 2, 0)
+        #display the speed text to the bottom (offset 20) center
+        cv2.putText(img, text2, (textX, img.shape[0]-30), font, 0.5, (0, 255, 0), 1)
+
+        
     def show_scroll_bar(self, state, img, current_frame_no):
         ''' add scroll bar to the bottom of the image based on the state
         '''
@@ -582,6 +610,14 @@ class Render:
                 if  i >= box[1] and i <= box[1] + box[3] and \
                         j >= box[0] and j <= box[0] + box[2]:
                     image[i][j] = mosaic_image[i][j]
+
+    def update_on_key(self, k):
+        if k == ord('c'):
+            self.__mode = Mode.CROP
+        elif k == ord('m'):
+            self.__mode = Mode.MOSAIC
+        elif k == ord('a'):
+            self.__mode = Mode.ANN
 
 def draw_rect(event, x, y, flags, state):
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -620,7 +656,7 @@ def main():
             "Output file is same with input file, this will overwrite the input"
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
-    
+
     cap = VideoCapture(input_file)
     fps = cap.get(cv2.CAP_PROP_FPS)  
     fps = 25
@@ -714,6 +750,8 @@ def main():
         k = cv2.waitKey(idle_time) & 0xFF
         #handle key event
         state.update_on_key(k)
+        render.update_on_key(k)
+
     if out is not None:
         out.release()
     cap.release()
