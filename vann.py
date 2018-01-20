@@ -48,6 +48,45 @@ def mkdir(d1, d2=None):
             os.mkdir(d)
     return d
 
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    boxInter = (xA, yA, xB, yB)
+    if xB < xA or yB < yA: #invalid box
+        return 0
+
+    # compute the area of intersection rectangle
+    interArea = (xB - xA ) * (yB - yA)
+
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0] ) * (boxA[3] - boxA[1] )
+    boxBArea = (boxB[2] - boxB[0] ) * (boxB[3] - boxB[1] )
+    assert boxAArea >= 0 and boxBArea >= 0, \
+            "boxA:{}, area:{}, boxB:{}, area:{}"\
+            .format(boxA, boxAArea, boxB, boxBArea)
+
+    #one of the box is a zero box (boxAArea ==0 or boxBArea==0)
+    #or when the two box has no intersection at all(interArea <0)
+    if interArea <= 0 or boxAArea == 0 or boxBArea == 0:
+        iou = 0.0
+        return iou
+
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+
+    assert iou > 0 and iou <= 1.0, \
+            "boxA:{}, area:{}, boxB:{}, area:{}, interBox:{} iou: {}"\
+            .format(boxA, boxAArea, boxB, boxBArea, boxInter, iou)
+    # print boxAArea, boxBArea, interArea, iou
+    return iou
+
 class Mode:
     ANN = 'ANN'
     MOSAIC = 'MOSAIC'
@@ -280,47 +319,6 @@ class SamplePairSaver:
             return self.__queue.empty()
         return True
 
-def bb_intersection_over_union(boxA, boxB):
-    # determine the (x, y)-coordinates of the intersection rectangle
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
-
-    boxInter = (xA, yA, xB, yB)
-    if xB < xA or yB < yA: #invalid box
-        return 0
-
-    # compute the area of intersection rectangle
-    interArea = (xB - xA ) * (yB - yA)
-
-    # compute the area of both the prediction and ground-truth
-    # rectangles
-    boxAArea = (boxA[2] - boxA[0] ) * (boxA[3] - boxA[1] )
-    boxBArea = (boxB[2] - boxB[0] ) * (boxB[3] - boxB[1] )
-    assert boxAArea >= 0 and boxBArea >= 0, \
-            "boxA:{}, area:{}, boxB:{}, area:{}"\
-            .format(boxA, boxAArea, boxB, boxBArea)
-
-    #one of the box is a zero box (boxAArea ==0 or boxBArea==0)
-    #or when the two box has no intersection at all(interArea <0)
-    if interArea <= 0 or boxAArea == 0 or boxBArea == 0:
-        iou = 0.0
-        return iou
-
-    # compute the intersection over union by taking the intersection
-    # area and dividing it by the sum of prediction + ground-truth
-    # areas - the interesection area
-    iou = interArea / float(boxAArea + boxBArea - interArea)
-
-    assert iou > 0 and iou <= 1.0, \
-            "boxA:{}, area:{}, boxB:{}, area:{}, interBox:{} iou: {}"\
-            .format(boxA, boxAArea, boxB, boxBArea, boxInter, iou)
-    # print boxAArea, boxBArea, interArea, iou
-    return iou
-
-def twoboxes_too_far(box0, box1):
-    return False
 
 class State:
     ''' A class holding the current state of the video-player
