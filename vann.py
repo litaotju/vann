@@ -628,8 +628,8 @@ class Render:
         text_pos = (30, img.shape[0]-HEIGHT_PADDING+15)
         cv2.putText(img, text, text_pos, font, 0.5, (0, 255, 0), 1)
 
-        text2 = "Save:{}, Mode:{}, MosaicSize:{}, Tracker:{}".format(
-                     state.save, self.__mode, 
+        text2 = "Save:{}, Threaded:{}, Mode:{}, MosaicSize:{}, Tracker:{}".format(
+                     state.save, state.thread_save, self.__mode, 
                      state.mosaic_size, state.tracker_type)
         if state.iou is not None:
             text2 += " , IOU: {:.2%}".format(state.iou)
