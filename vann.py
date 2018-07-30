@@ -596,7 +596,7 @@ class MosaicHelper:
     @staticmethod
     def mosaic_on_bound_box(image, bound_box, mosaic_size=10):
         height, width = image.shape[:2]
-        mosaic_image = MosaicHelper.__mosaic_image(image)
+        mosaic_image = MosaicHelper.__mosaic_image(image, mosaic_size)
         #this is to make the x,y are in the scope of given img indices
         #because some times, the bound box given by the tracker, will be out the scope
         x_start = max(int(bound_box[0]), 0)
@@ -608,7 +608,7 @@ class MosaicHelper:
 
     @staticmethod
     def mosaic_on_mask(img, mask, mosaic_size=10):
-        mosaic_image = MosaicHelper.__mosaic_image(img)
+        mosaic_image = MosaicHelper.__mosaic_image(img, mosaic_size)
         #pixel where mask==1 will be mosaiced, otherwise keep the original
         idx = (mask==1)
         img[idx] = mosaic_image[idx]
@@ -641,7 +641,7 @@ class Render:
                 #Draw the mosaic only on the mask that grab cut returns
                 cut_img = state.img.copy()
                 mask = GrabCutHelper.grab_cut(cut_img, bound_box)
-                cut_img = MosaicHelper.mosaic_on_mask(cut_img, mask, state.mosaic_size)
+                cut_img = MosaicHelper.mosaic_on_mask(cut_img, mask, state.mosaic_size-3)
 
             elif self.__mode in (Mode.ANN, Mode.CROP):
                 pt1 = (int(bound_box[0]), int(bound_box[1]))
