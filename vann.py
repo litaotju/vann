@@ -32,8 +32,7 @@ MAX_WIDTH = 1080
 # max cache as mb
 MAX_CACHE_IN_MB = 1024
 
-ALLOWED_TRACKER_TYPE = ["TLD", "KCL"]
-
+# Padding when showing the image/video in Height direction
 HEIGHT_PADDING = 50
 
 def debug(var, name):
@@ -90,9 +89,28 @@ def bb_intersection_over_union(boxA, boxB):
     return iou
 
 class Mode:
+    '''Enum class to hold the allowed Mode of this vann tool'''
     ANN = 'ANN'
     MOSAIC = 'MOSAIC'
     CROP = 'CROP'
+
+class TrackerType:
+    '''Enum class to hold the allowed tracker type in this vann tool'''
+    KCL = "KCL"
+    TLD = "TLD"
+    NULL = "NULL"
+    __tracker_fn = {
+                KCL: cv2.TrackerKCF_create,
+                TLD: cv2.TrackerTLD_create,
+                NULL: lambda : None }
+
+    @staticmethod
+    def tracker_fn(tracker_type):
+        if tracker_type in TrackerType.__tracker_fn:
+            return TrackerType.__tracker_fn[tracker_type]
+        else:
+            print("Warning: no valid tracker callback found for %s", tracker_type)
+            return lambda:None
 
 class VideoCapture:
 
@@ -356,12 +374,7 @@ class State:
         self.iou = None
         self.cap = cap # VideoCapture
         self.freeze_box = None
-        self.__tracker_type = "KCL"
-        self.__tracker_fn = {
-                "KCL": cv2.TrackerKCF_create,
-                "TLD": cv2.TrackerTLD_create,
-                "NULL": lambda : None
-                }
+        self.__tracker_type = TrackerType.KCL
         self.mosaic_size = DEFAULT_MOSAIC_SIZE
         self.__max_frame_no = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.mosaiced_frames = np.zeros(self.__max_frame_no, np.int8)
@@ -417,11 +430,11 @@ class State:
         #k , t, n
         if k in (107, 116, 110):
             if k == 107: #k
-                self.__tracker_type = "KCL"
+                self.__tracker_type = TrackerType.KCL
             if k == 116: #t
-                self.__tracker_type = "TLD"
+                self.__tracker_type = TrackerType.TLD
             if k == 110: #n
-                self.__tracker_type = "NULL"
+                self.__tracker_type = TrackerType.NULL
             print ("Changing the tracker type to %s" % self.__tracker_type)
 
         #print k
@@ -470,13 +483,8 @@ class State:
         if self.has_valid_bbox():
             # get the initial bounding box, from user specifed
             ok, bbox = self.__get_current_bbox()
-
-            try:
-                self.tracker = self.__tracker_fn[self.__tracker_type]()
-            except AttributeError:
-                self.tracker = cv2.Tracker_create(self.__tracker_type)
-
-            print ("Initializing tracker of type:%s" % self.__tracker_type)
+            self.tracker = TrackerType.tracker_fn(self.tracker_type)()
+            print ("Initializing tracker of type:%s, %s" % (self.__tracker_type, self.tracker))
             # Initialize tracker with first frame and bounding box
             if self.tracker is not None:
                 ok = self.tracker.init(self.img, tuple(bbox))
@@ -545,7 +553,7 @@ class State:
 
     @property
     def tracker_type(self):
-        return str(self.__tracker_type)
+        return self.__tracker_type
 
     def mark_frame_as_mosaic(self, frame_no):
         '''add the current frame no to marked set
@@ -636,10 +644,10 @@ class Render:
                 cut_img = MosaicHelper.mosaic_on_mask(cut_img, mask, state.mosaic_size)
 
             elif self.__mode in (Mode.ANN, Mode.CROP):
-                cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
-                            (int(bound_box[0] + bound_box[2]),  \
-                                int(bound_box[1] + bound_box[3])), \
-                            (255, 0, 0), 1)
+                pt1 = (int(bound_box[0]), int(bound_box[1]))
+                pt2 = (int(bound_box[0] + bound_box[2]), int(bound_box[1] + bound_box[3]))
+                cv2.rectangle(img, pt1, pt2, (255, 0, 0), 1)
+
             if self.__mode == Mode.CROP:
                 x_start = int(bound_box[0])
                 x_end = min(int(bound_box[0] + bound_box[2]+1), img.shape[1])
