@@ -556,7 +556,60 @@ class State:
     @property
     def intervals(self):
         return self.__intervals
-   
+
+
+class GrabCut:
+    '''
+        
+    '''
+    @staticmethod
+    def grabCut(img, bound_box):
+        '''
+            given img and bound_box, run grabCut alogrithm on the img 
+            and the returned img should be image with only selected region
+        '''
+        if not bound_box:
+            return None
+        bound_box = tuple( [int(_) for _ in bound_box] )
+        mask = np.zeros(img.shape[:2], np.uint8)
+        fgdModel = np.zeros([1,65],np.float64)
+        bgdModel = np.zeros([1,65],np.float64)
+        cv2.grabCut(img, mask, bound_box, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        mask = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
+        return mask
+
+class MosaicHelper:
+
+    @staticmethod
+    def __mosaic_image(image, mosaic_size=10):
+        height, width = image.shape[:2]
+        scale_mosaic = 1 / float(mosaic_size)
+        mosaic_image = cv2.resize(image, (0, 0), fx=scale_mosaic, fy=scale_mosaic)
+        mosaic_image = cv2.resize(mosaic_image, (width, height), interpolation=cv2.INTER_NEAREST)
+        return mosaic_image
+
+    @staticmethod
+    def mosaic_on_bound_box(image, bound_box, mosaic_size=10):
+        height, width = image.shape[:2]
+        mosaic_image = MosaicHelper.__mosaic_image(image)
+        #this is to make the x,y are in the scope of given img indices
+        #because some times, the bound box given by the tracker, will be out the scope
+        x_start = max(int(bound_box[0]), 0)
+        y_start = max(int(bound_box[1]), 0)
+        x_end = min(int(bound_box[0] + bound_box[2]+1), width)
+        y_end = min(int(bound_box[1] + bound_box[3]+1), height)
+
+        image[y_start:y_end, x_start:x_end, :] = mosaic_image[y_start:y_end, x_start:x_end, :]
+
+    @staticmethod
+    def mosaic_on_mask(img, mask, mosaic_size=10):
+        mosaic_image = MosaicHelper.__mosaic_image(img)
+        #pixel where mask==1 will be mosaiced, otherwise keep the original
+        idx = (mask==1)
+        img[idx] = mosaic_image[idx]
+        return img
+
+
 class Render:
     def __init__(self):
         self.__mode = Mode.MOSAIC #process mode
@@ -574,10 +627,17 @@ class Render:
             bound_box = state.freeze_box
 
         ret_img = None
+        cut_img = np.zeros(img.shape, img.dtype)
         if bound_box:
             #print("Bounding box on:{}".format(bound_box))
             if self.__mode == Mode.MOSAIC:
-                self.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
+                MosaicHelper.mosaic_on_bound_box(img, bound_box, state.mosaic_size)
+                
+                #Draw the mosaic only on the mask that grab cut returns
+                cut_img = state.img.copy()
+                mask = GrabCut.grabCut(cut_img, bound_box)
+                cut_img = MosaicHelper.mosaic_on_mask(cut_img, mask, state.mosaic_size)
+
             elif self.__mode in (Mode.ANN, Mode.CROP):
                 cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
                             (int(bound_box[0] + bound_box[2]),  \
@@ -594,21 +654,22 @@ class Render:
         if ret_img is None:
             ret_img = img.copy()
 
-        # Draw the user specifed box only on the copy frame, 
+        # Draw the user specifed box only on the copy frame
         # This do not affect the returned one 
         if state.has_valid_bbox():
-             cv2.rectangle(img, state.start_point, 
-                           state.end_point, (0, 255, 0), 1)
+             cv2.rectangle(img, state.start_point, state.end_point, (0, 255, 0), 1)
+
+        # Draw tracker's bound_box, if it has one
         if bound_box:
-             cv2.rectangle(img, (int(bound_box[0]), int(bound_box[1])), \
-                            (int(bound_box[0] + bound_box[2]),  \
-                                int(bound_box[1] + bound_box[3])), \
-                            (255, 0, 0), 1)
+             pt1 = (int(bound_box[0]), int(bound_box[1]))
+             pt2 = (int(bound_box[0] + bound_box[2]), int(bound_box[1] + bound_box[3]))
+             cv2.rectangle(img, pt1, pt2, (255, 0, 0), 1)
 
         #height+40, width, channel
-        expanded_img = np.zeros([img.shape[0]+ HEIGHT_PADDING,  img.shape[1], img.shape[2]],
+        expanded_img = np.zeros([img.shape[0]*2+ HEIGHT_PADDING,  img.shape[1], img.shape[2]],
                                 img.dtype)
         expanded_img[:img.shape[0], :, :] = img
+        expanded_img[img.shape[0]: img.shape[0]*2, :, :] = cut_img
         self.show_text_info(state, expanded_img)
         self.show_scroll_bar(state, expanded_img, current_frame_no)
         
@@ -664,21 +725,6 @@ class Render:
         pos = pos/MAX_FRAME_NO*width
         for i in pos.astype(np.int32):
             cv2.circle(img, (i, int(height-10)), 3, (0,0,255), 1) 
-
-    def mosaic_on_bound_box(self, image, bound_box, mosaic_size=10):
-        height, width = image.shape[:2]
-        scale_mosaic = 1 / float(mosaic_size)
-        mosaic_image = cv2.resize(image, (0, 0), fx=scale_mosaic, fy=scale_mosaic)
-        mosaic_image = cv2.resize(mosaic_image, (width, height), interpolation=cv2.INTER_NEAREST)
-
-        #this is to make the x,y are in the scope of given img indices
-        #because some times, the bound box given by the tracker, will be out the scope
-        x_start = max(int(bound_box[0]), 0)
-        y_start = max(int(bound_box[1]), 0)
-        x_end = min(int(bound_box[0] + bound_box[2]+1), width)
-        y_end = min(int(bound_box[1] + bound_box[3]+1), height)
-
-        image[y_start:y_end, x_start:x_end, :] = mosaic_image[y_start:y_end, x_start:x_end, :]
 
     def update_on_key(self, k):
         if k == ord('c'):
@@ -784,7 +830,6 @@ def main():
         timer = cv2.getTickCount()
         processed_img, bound_box = render.render(state, WINDOW_NAME, 
                                                  current_frame_no)
-
         if not state.pause and state.save:
             if out is not None:
                 out.write(processed_img)
@@ -798,9 +843,8 @@ def main():
                     save_this_frame = True
                 if save_this_frame:
                     last_saved_frame = frame_cnt
-                    saver.save_images(raw_img, processed_img, 
-                            (state.iou, bound_box), current_frame_no,
-                            state.thread_save)
+                    saver.save_images(raw_img, processed_img, (state.iou, bound_box), 
+                                      current_frame_no, state.thread_save)
                     state.mark_frame_as_mosaic(current_frame_no)
 
         cur_fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
