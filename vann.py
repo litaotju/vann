@@ -558,12 +558,9 @@ class State:
         return self.__intervals
 
 
-class GrabCut:
-    '''
-        
-    '''
+class GrabCutHelper:
     @staticmethod
-    def grabCut(img, bound_box):
+    def grab_cut(img, bound_box):
         '''
             given img and bound_box, run grabCut alogrithm on the img 
             and the returned img should be image with only selected region
@@ -635,7 +632,7 @@ class Render:
                 
                 #Draw the mosaic only on the mask that grab cut returns
                 cut_img = state.img.copy()
-                mask = GrabCut.grabCut(cut_img, bound_box)
+                mask = GrabCutHelper.grab_cut(cut_img, bound_box)
                 cut_img = MosaicHelper.mosaic_on_mask(cut_img, mask, state.mosaic_size)
 
             elif self.__mode in (Mode.ANN, Mode.CROP):
