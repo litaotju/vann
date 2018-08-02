@@ -72,7 +72,23 @@ class BatchProcessForBoxesFiles(object):
         self._output_dir = output_dir
 
     def run_batch(self):
-        pass
+        boxes_file_dir = self._boxes_file_dir
+        ann_basedir = self._ann_basedir
+        output_dir = self._output_dir
+
+        mkdir(output_dir)
+        mkdir(output_dir, "raw_images")
+        mkdir(output_dir, "mosaic_images")
+        mkdir(output_dir, "grab_cut_images")
+    
+        for f in os.listdir(boxes_file_dir):
+            boxes_file = os.path.join(boxes_file_dir, f)
+            if os.path.isfile(boxes_file):
+                self._process_file(boxes_file, ann_basedir, output_dir)
+            break
+
+    def _process_file(self, boxes_file, ann_basedir, output_dir):
+        raise AssertionError, "not implemented"
 
 ###############################################################################
 # 
@@ -123,20 +139,6 @@ class TaskCrabOnBox(TaskOneInOneOut):
 
 class BatchCrop(BatchProcessForBoxesFiles):
 
-    def run_batch(self):
-        boxes_file_dir = self._boxes_file_dir
-        ann_basedir = self._ann_basedir
-        output_dir = self._output_dir
-        
-        mkdir(output_dir)
-        mkdir(output_dir, "mosaic_images")
-        mkdir(output_dir, "raw_images")
-    
-        for f in os.listdir(boxes_file_dir):
-            boxes_file = os.path.join(boxes_file_dir, f)
-            if os.path.isfile(boxes_file):
-                self._process_file(boxes_file, ann_basedir, output_dir)
-
     def _process_file(self, boxes_file, ann_basedir, output_dir):
          '''@brief given an bound_box file, execute sth. on each (image, box) pair, and store the result on output dir
             @para  boxes_file, file genearated by vann.py
@@ -148,11 +150,11 @@ class BatchCrop(BatchProcessForBoxesFiles):
          #To stat the QoR
          invalid_file = 0
          for f in anns:
-             mosaic_img = os.path.join(ann_basedir, 'mosaic_images', f)
              raw_img = os.path.join(ann_basedir, 'raw_images', f)
+             mosaic_img = os.path.join(ann_basedir, 'mosaic_images', f)
      
-             mosaic_img_o = os.path.join(output_dir, 'mosaic_images', f)
              raw_img_o = os.path.join(output_dir, "raw_images", f)
+             mosaic_img_o = os.path.join(output_dir, 'mosaic_images', f)
      
              check_file = True
              for _ in (mosaic_img, raw_img):
@@ -189,25 +191,12 @@ class TaskMosaicOnBox(TaskOneInOneOut):
 
 class BatchMosaic(BatchProcessForBoxesFiles):
 
-    def run_batch(self):
-        boxes_file_dir = self._boxes_file_dir
-        ann_basedir = self._ann_basedir
-        output_dir = self._output_dir
-
-        mkdir(output_dir)
-        mkdir(output_dir, "mosaic_images")
-    
-        for f in os.listdir(boxes_file_dir):
-            boxes_file = os.path.join(boxes_file_dir, f)
-            if os.path.isfile(boxes_file):
-                self._process_file(boxes_file, ann_basedir, output_dir)
-
     def _process_file(self, boxes_file, ann_basedir, output_dir):
         anns = parse_annotations(boxes_file)
         invalid_file = 0
         for f, (box, iou) in anns.iteritems():
-            mosaic_img = os.path.join(output_dir, 'mosaic_images', f)
             raw_img = os.path.join(ann_basedir, 'raw_images', f)
+            mosaic_img = os.path.join(output_dir, 'mosaic_images', f)
             if os.path.exists(mosaic_img):
                 continue
             TaskMosaicOnBox(raw_img, box, mosaic_img).run()
@@ -232,21 +221,8 @@ class TaskGrabCutOnBox(TaskOneInOneOut):
         img = img*mask2[:,:,np.newaxis]
 
         cv2.imwrite(self._output_filename, img)
-        #img.save(self._output_filename)
 
 class BatchGrabCut(BatchProcessForBoxesFiles):
-    def run_batch(self):
-        boxes_file_dir = self._boxes_file_dir
-        ann_basedir = self._ann_basedir
-        output_dir = self._output_dir
-
-        mkdir(output_dir)
-        mkdir(output_dir, "grab_cut_images")
-        for f in os.listdir(boxes_file_dir):
-            boxes_file = os.path.join(boxes_file_dir, f)
-            if os.path.isfile(boxes_file):
-                self._process_file(boxes_file, ann_basedir, output_dir)
-
     def _process_file(self, boxes_file, ann_basedir, output_dir):
         anns = parse_annotations(boxes_file)
         for f, (box,iou) in anns.items():
@@ -268,12 +244,15 @@ def main():
     # Where there output directory is.
     output_dir = sys.argv[3]
 
+    mode = sys.argv[4] 
     print boxes_file_dir, ann_basedir, output_dir
     assert output_dir != ann_basedir, "This would over write the original data"
-
-    #BatchCrop(boxes_file_dir, ann_basedir, output_dir).run_batch()
-    #BatchGrabCut(boxes_file_dir, ann_basedir, output_dir).run_batch()
-    BatchMosaic(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    if mode == 'c':
+        BatchCrop(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    if mode == 'g':
+        BatchGrabCut(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    if mode == 'm':
+        BatchMosaic(boxes_file_dir, ann_basedir, output_dir).run_batch()
 
 
 if __name__ == "__main__":
