@@ -89,8 +89,8 @@ class BatchProcessForBoxesFiles(object):
             files = [self._boxes_file_dir]
         else:
             files = [ os.path.join(self._boxes_file_dir, f) \
-                       for f in os.listdir(self._boxes_file_dir)\
-                           if os.path.isfile(f) ]
+                       for f in os.listdir(self._boxes_file_dir)]
+            files = [ _ for _ in files if os.path.isfile(_) ]
 
         if not self._threaded:
             for boxes_file in files:
@@ -126,14 +126,12 @@ class BatchProcessForBoxesFiles(object):
                 raw_img_o = os.path.join(self._output_dir, self._batch_prefix, f)
                 task = self._get_task(raw_img, box, raw_img_o)
                 self._queue.put(task)
-        print ("Put Done")
 
     def dispatch_tasks(self):
         while True:
             t = self._queue.get()
             t.run()
             self._queue.task_done()
-        print ("Dispatch done")
 
     def _get_task(self, input_fname, box, output_fname):
         raise AssertionError, "not implemented"
@@ -307,7 +305,7 @@ def main():
     if mode == 'gs':
         BatchGrabCut(boxes_file_dir, ann_basedir, output_dir, "grabcut_images").run_batch()
     if mode == 'm':
-        BatchMosaic(boxes_file_dir, ann_basedir, output_dir, "mosaic_images").set_threaded().run_batch()
+        BatchMosaic(boxes_file_dir, ann_basedir, output_dir, "mosaic_images_thread").set_threaded().run_batch()
     if mode == 'ms':
         BatchMosaic(boxes_file_dir, ann_basedir, output_dir, "mosaic_images").run_batch()
 
