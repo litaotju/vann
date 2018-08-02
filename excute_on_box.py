@@ -3,6 +3,9 @@ import cv2
 import sys
 import os
 import copy
+import threading
+import Queue
+
 import numpy as np
 from PIL import Image
 
@@ -74,6 +77,10 @@ class BatchProcessForBoxesFiles(object):
         self._output_dir = output_dir
         self._batch_prefix = batch_prefix
 
+        self._threaded = False
+        self._thread_num = 4
+        self._queue = None 
+
     def run_batch(self):
         self._create_dirs()
 
@@ -85,8 +92,20 @@ class BatchProcessForBoxesFiles(object):
                        for f in os.listdir(self._boxes_file_dir)\
                            if os.path.isfile(f) ]
 
-        for boxes_file in files:
-            self._process_file(boxes_file, self._ann_basedir, self._output_dir)
+        if not self._threaded:
+            for boxes_file in files:
+                self._process_file(boxes_file, self._ann_basedir, self._output_dir)
+        else:
+            self._queue = Queue.Queue()
+            self.__produce_tasks(files)
+
+            threads = [threading.Thread(target=self.dispatch_tasks) \
+                             for _ in range(self._thread_num)]
+            for t in threads:
+                t.setDaemon(True)
+                t.start()
+
+            self._queue.join()
 
     def _create_dirs(self):
         mkdir(self._output_dir)
@@ -98,9 +117,31 @@ class BatchProcessForBoxesFiles(object):
             raw_img = os.path.join(ann_basedir,  "raw_images", f)
             raw_img_o = os.path.join(output_dir, self._batch_prefix, f)
             self._get_task(raw_img, box, raw_img_o).run()
-    
+
+    def __produce_tasks(self, files):
+        for boxes_file in files:
+            anns = parse_annotations(boxes_file)
+            for f, (box,iou) in anns.items():
+                raw_img = os.path.join(self._ann_basedir,  "raw_images", f)
+                raw_img_o = os.path.join(self._output_dir, self._batch_prefix, f)
+                task = self._get_task(raw_img, box, raw_img_o)
+                self._queue.put(task)
+        print ("Put Done")
+
+    def dispatch_tasks(self):
+        while True:
+            t = self._queue.get()
+            t.run()
+            self._queue.task_done()
+        print ("Dispatch done")
+
     def _get_task(self, input_fname, box, output_fname):
         raise AssertionError, "not implemented"
+
+    def set_threaded(self, thread_num=4):
+        self._threaded = True
+        self._threaded = 4
+        return self
 
 ###############################################################################
 # 
@@ -262,8 +303,12 @@ def main():
     if mode == 'c':
         BatchCrop(boxes_file_dir, ann_basedir, output_dir, "cropped").run_batch()
     if mode == 'g':
+        BatchGrabCut(boxes_file_dir, ann_basedir, output_dir, "grabcut_images_thread").set_threaded().run_batch()
+    if mode == 'gs':
         BatchGrabCut(boxes_file_dir, ann_basedir, output_dir, "grabcut_images").run_batch()
     if mode == 'm':
+        BatchMosaic(boxes_file_dir, ann_basedir, output_dir, "mosaic_images").set_threaded().run_batch()
+    if mode == 'ms':
         BatchMosaic(boxes_file_dir, ann_basedir, output_dir, "mosaic_images").run_batch()
 
 
