@@ -76,11 +76,17 @@ class BatchProcessForBoxesFiles(object):
 
     def run_batch(self):
         self._create_dirs()
-        for f in os.listdir(self._boxes_file_dir):
-            boxes_file = os.path.join(self._boxes_file_dir, f)
-            if os.path.isfile(boxes_file):
-                self._process_file(boxes_file, self._ann_basedir, self._output_dir)
-            break
+
+        files = []
+        if os.path.isfile(self._boxes_file_dir):
+            files = [self._boxes_file_dir]
+        else:
+            files = [ os.path.join(self._boxes_file_dir, f) \
+                       for f in os.listdir(self._boxes_file_dir)\
+                           if os.path.isfile(f) ]
+
+        for boxes_file in files:
+            self._process_file(boxes_file, self._ann_basedir, self._output_dir)
 
     def _create_dirs(self):
         mkdir(self._output_dir)
@@ -212,6 +218,7 @@ class BatchMosaic(BatchProcessForBoxesFiles):
 ###############################################################################
 class TaskGrabCutOnBox(TaskOneInOneOut):
 
+    ITER_NUM = 5
     def run(self):
         box = tuple(self._box)
         img = cv2.imread(self._filename)
@@ -220,11 +227,11 @@ class TaskGrabCutOnBox(TaskOneInOneOut):
         bgdModel = np.zeros((1,65),np.float64)
         fgdModel = np.zeros((1,65),np.float64)
 
-        cv2.grabCut(img, mask, box, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        cv2.grabCut(img, mask, box, bgdModel, fgdModel, \
+                      TaskGrabCutOnBox.ITER_NUM, cv2.GC_INIT_WITH_RECT)
 
         mask2 = np.where((mask==2)|(mask==0),0,1).astype('uint8')
         img = img*mask2[:,:,np.newaxis]
-
         cv2.imwrite(self._output_filename, img)
 
 
@@ -249,7 +256,9 @@ def main():
 
     mode = sys.argv[4] 
     print boxes_file_dir, ann_basedir, output_dir
+
     assert output_dir != ann_basedir, "This would over write the original data"
+
     if mode == 'c':
         BatchCrop(boxes_file_dir, ann_basedir, output_dir, "cropped").run_batch()
     if mode == 'g':
