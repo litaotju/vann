@@ -36,7 +36,7 @@ def parse_annotations(boxes_file):
     print( "Invalid box entry count:{}".format(invalid_cnt))
     return anns
 
-class ActionOnBox(object):
+class TaskOnBox(object):
 
     def __init__(self, filename, box):
         self._filename = filename
@@ -45,9 +45,9 @@ class ActionOnBox(object):
     def run(self):
         raise Exception("This has been implemented")
 
-class ActionOneInOneOut(ActionOnBox):
+class TaskOneInOneOut(TaskOnBox):
     def __init__(self, input_fname, box, output_fname):
-        super(ActionOneInOneOut, self).__init__(input_fname, box)
+        super(TaskOneInOneOut, self).__init__(input_fname, box)
         self._output_filename = output_fname
 
 class BatchProcessForBoxesFiles(object):
@@ -61,7 +61,7 @@ class BatchProcessForBoxesFiles(object):
         pass
 
 
-class CropOnBox(ActionOneInOneOut):
+class TaskCrabOnBox(TaskOneInOneOut):
 
     def run(self):
         box = copy.copy(self._box)
@@ -149,8 +149,8 @@ class BatchCrop(BatchProcessForBoxesFiles):
                  continue
      
              orig_box = anns[f][0]
-             CropOnBox(mosaic_img, orig_box, mosaic_img_o).run()
-             CropOnBox(raw_img, orig_box, raw_img_o).run()
+             TaskCrabOnBox(mosaic_img, orig_box, mosaic_img_o).run()
+             TaskCrabOnBox(raw_img, orig_box, raw_img_o).run()
      
              #if need_resize:
              #    mosaic_img = mosaic_img.resize((SIZE, SIZE))
@@ -158,7 +158,7 @@ class BatchCrop(BatchProcessForBoxesFiles):
          print ("Numer of files missed: %d" % invalid_file)
      
 
-class GrabCutOnBox(ActionOneInOneOut):
+class TaskGrabCutOnBox(TaskOneInOneOut):
 
     def run(self):
         box = tuple(self._box)
@@ -194,7 +194,7 @@ class BatchGrabCut(BatchProcessForBoxesFiles):
         for f, (box,iou) in anns.items():
             raw_img = os.path.join(ann_basedir,  "raw_images", f)
             raw_img_o = os.path.join(output_dir, "grab_cut_images", f)
-            GrabCutOnBox(raw_img, box, raw_img_o).run()
+            TaskGrabCutOnBox(raw_img, box, raw_img_o).run()
 
 def main():
     # Where there are *txts, each row is one item, contains image, bound_box, iou
