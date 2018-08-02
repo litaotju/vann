@@ -6,7 +6,7 @@ import copy
 import numpy as np
 from PIL import Image
 
-from vann import mkdir
+from vann import mkdir, MosaicHelper
 
 def isvalid_box(box):
     return len(box) == 4 and box[2] >= 0 and box[3] >= 0
@@ -18,23 +18,37 @@ def parse_annotations(boxes_file):
                      'box' has a format of (x, y, h, w),
                      'iou' is the intersect of union with ground truth box drawed by user
     '''
+    print("Info: begin processing file %s" % boxes_file)
     anns = {}
     invalid_cnt = 0
     with open(boxes_file, 'r') as fobj:
+        line_no = 0
         for line in fobj:
-            f, box, iou = line.strip().split(":")
-            f = os.path.basename(f)
-            f = f.strip()
-            box = eval(box)
-            if not isvalid_box(box):
-                invalid_cnt += 1
-                print ("Invalid line:{}".format(line))
-                continue
-            #may be negative, but that's fine, we can make it zero
-            box = [max(int(_), 0) for _ in box]
-            anns[f] = (box, iou)
-    print( "Invalid box entry count:{}".format(invalid_cnt))
+            line_no += 1
+            try :
+                f, box, iou = line.strip().split(":")
+                f = os.path.basename(f)
+                f = f.strip()
+                box = eval(box)
+                if not isvalid_box(box):
+                    invalid_cnt += 1
+                    print ("Info: invalid line:{}".format(line))
+                    continue
+                #may be negative, but that's fine, we can make it zero
+                box = [max(int(_), 0) for _ in box]
+                anns[f] = (box, iou)
+            except Exception, e:
+                print("Error: problem when processing %s:%d %s" % \
+                         (boxes_file, line_no, line) )
+                anns = {}
+                break
+    print("Info: invalid box entry count:{}".format(invalid_cnt))
+    print("Info: end   processing file %s\n" % boxes_file)
     return anns
+
+###############################################################################
+#
+###############################################################################
 
 class TaskOnBox(object):
 
@@ -60,7 +74,9 @@ class BatchProcessForBoxesFiles(object):
     def run_batch(self):
         pass
 
-
+###############################################################################
+# 
+###############################################################################
 class TaskCrabOnBox(TaskOneInOneOut):
 
     def run(self):
@@ -157,7 +173,49 @@ class BatchCrop(BatchProcessForBoxesFiles):
              #    raw_img = raw_img.resize((SIZE, SIZE))
          print ("Numer of files missed: %d" % invalid_file)
      
+###############################################################################
+#
+###############################################################################
+class TaskMosaicOnBox(TaskOneInOneOut):
+    MOSAIC_SIZE = 10
 
+    def run(self):
+        image = cv2.imread(self._filename)
+        if image is None:
+            print("Warning: can not find %s", self._filename)
+            return
+        MosaicHelper.mosaic_on_bound_box(image, self._box, self.MOSAIC_SIZE)
+        cv2.imwrite(self._output_filename, image)
+
+class BatchMosaic(BatchProcessForBoxesFiles):
+
+    def run_batch(self):
+        boxes_file_dir = self._boxes_file_dir
+        ann_basedir = self._ann_basedir
+        output_dir = self._output_dir
+
+        mkdir(output_dir)
+        mkdir(output_dir, "mosaic_images")
+    
+        for f in os.listdir(boxes_file_dir):
+            boxes_file = os.path.join(boxes_file_dir, f)
+            if os.path.isfile(boxes_file):
+                self._process_file(boxes_file, ann_basedir, output_dir)
+
+    def _process_file(self, boxes_file, ann_basedir, output_dir):
+        anns = parse_annotations(boxes_file)
+        invalid_file = 0
+        for f, (box, iou) in anns.iteritems():
+            mosaic_img = os.path.join(output_dir, 'mosaic_images', f)
+            raw_img = os.path.join(ann_basedir, 'raw_images', f)
+            if os.path.exists(mosaic_img):
+                continue
+            TaskMosaicOnBox(raw_img, box, mosaic_img).run()
+
+
+###############################################################################
+#
+###############################################################################
 class TaskGrabCutOnBox(TaskOneInOneOut):
 
     def run(self):
@@ -196,6 +254,10 @@ class BatchGrabCut(BatchProcessForBoxesFiles):
             raw_img_o = os.path.join(output_dir, "grab_cut_images", f)
             TaskGrabCutOnBox(raw_img, box, raw_img_o).run()
 
+###############################################################################
+#
+###############################################################################
+
 def main():
     # Where there are *txts, each row is one item, contains image, bound_box, iou
     boxes_file_dir = sys.argv[1]
@@ -209,8 +271,9 @@ def main():
     print boxes_file_dir, ann_basedir, output_dir
     assert output_dir != ann_basedir, "This would over write the original data"
 
-    BatchCrop(boxes_file_dir, ann_basedir, output_dir).run_batch()
-    BatchGrabCut(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    #BatchCrop(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    #BatchGrabCut(boxes_file_dir, ann_basedir, output_dir).run_batch()
+    BatchMosaic(boxes_file_dir, ann_basedir, output_dir).run_batch()
 
 
 if __name__ == "__main__":
