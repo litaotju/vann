@@ -259,9 +259,14 @@ class TaskGrabCutOnBox(TaskOneInOneOut):
 
     ITER_NUM = 5
     def run(self):
+        #do not generate if already exists
+        if os.path.exists(self._output_filename):
+            return
         box = tuple(self._box)
         img = cv2.imread(self._filename)
-
+        if img is None:
+            print("Something wroing with %s, skip",  self._filename)
+            return
         mask = np.zeros(img.shape[:2],np.uint8)
         bgdModel = np.zeros((1,65),np.float64)
         fgdModel = np.zeros((1,65),np.float64)
